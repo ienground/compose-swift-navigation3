@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Unqualified task names run in every module that has them (library + example/shared)
+          - target: iosSimulatorArm64Test
+            os: macos-latest
+          - target: jvmTest
+            os: ubuntu-latest
+          - target: linuxX64Test
+            os: ubuntu-latest
+          - target: testAndroidHostTest
+            os: ubuntu-latest
+          - target: jsTest wasmJsTest
+            os: ubuntu-latest
+          # Make sure the example apps keep compiling
+          - target: :example:androidApp:assembleDebug :example:desktopApp:jar
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v7
+      # Matches gradle/gradle-daemon-jvm.properties, so the Gradle daemon does not need to be provisioned
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'jetbrains'
+          java-version: '25'
+      # Also validates the Gradle wrapper
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v6
+        with:
+          path: ~/.konan
+          key: ${{ runner.os }}-konan-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: ${{ runner.os }}-konan-
+      - name: Build with Gradle
+        run: ./gradlew ${{ matrix.target }}
