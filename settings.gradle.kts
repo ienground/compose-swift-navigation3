@@ -1,4 +1,4 @@
-rootProject.name = "ienground-kmp-library-template"
+rootProject.name = "compose-swift-navigation3"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {

@@ -1,60 +1,72 @@
 package zone.ien.utils.example
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import io.github.kotlin.fibonacci.generateFibi
-import org.jetbrains.compose.resources.painterResource
-import zone.ien.utils.example.resources.Res
-import zone.ien.utils.example.resources.compose_multiplatform
+import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.ui.NavDisplay
+import zone.ien.navigation.nativeHidesTabBar
+import zone.ien.navigation.nativeTitle
 
+/**
+ * Android / desktop entry point: plain Navigation 3 (`NavDisplay`) with Material 3 chrome drawn
+ * by the app. The routes, back stacks and screens are the same ones iOS shows natively.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-@Preview
 fun App() {
     MaterialTheme {
-        Scaffold { innerPadding ->
-            var showContent by rememberSaveable { mutableStateOf(false) }
-            val greeting = remember { Greeting().greet() }
-            val fibonacci = remember { generateFibi().take(10).joinToString() }
+        val navigation = rememberAppNavigation()
+        val entryProvider = remember(navigation) { appEntryProvider(navigation) }
+        val stack = navigation.currentStack
+        // The same nativeScreen metadata drives the Material chrome here.
+        val top = entryProvider(stack.last())
 
-            Column(
-                modifier = Modifier
-                    .padding(innerPadding)
-                    .fillMaxSize()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(text = greeting, style = MaterialTheme.typography.titleMedium)
-                // Uses the `:library` module
-                Text(text = "Fibonacci: $fibonacci")
-
-                TextButton(onClick = { showContent = !showContent }) {
-                    Text(text = if (showContent) "Hide logo" else "Show logo")
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(top.nativeTitle.orEmpty()) },
+                    navigationIcon = {
+                        if (stack.size > 1) TextButton(onClick = navigation::goBack) { Text("Back") }
+                    },
+                )
+            },
+            bottomBar = {
+                if (!top.nativeHidesTabBar) {
+                    NavigationBar {
+                        listOf("Home", "Settings").forEachIndexed { index, label ->
+                            NavigationBarItem(
+                                selected = navigation.selectedTab == index,
+                                onClick = { navigation.selectedTab = index },
+                                icon = { Text(label.take(1)) },
+                                label = { Text(label) },
+                            )
+                        }
+                    }
                 }
-                AnimatedVisibility(showContent) {
-                    Image(
-                        painter = painterResource(Res.drawable.compose_multiplatform),
-                        contentDescription = null,
-                    )
-                }
+            },
+        ) { innerPadding ->
+            Box(Modifier.padding(innerPadding)) {
+                NavDisplay(
+                    backStack = stack,
+                    onBack = navigation::goBack,
+                    entryDecorators = listOf(
+                        rememberSaveableStateHolderNavEntryDecorator(),
+                        rememberViewModelStoreNavEntryDecorator(),
+                    ),
+                    entryProvider = entryProvider,
+                )
             }
         }
     }

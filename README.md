@@ -1,55 +1,121 @@
-[![official project](http://jb.gg/badges/official.svg)](https://github.com/JetBrains#jetbrains-on-github)
+# compose-swift-navigation3
 
-# Multiplatform library template
+A Kotlin Multiplatform library that lets Compose Multiplatform apps built on Navigation 3 use the
+**real iOS navigation controllers** (`UINavigationController`, `UITabBarController`) on iOS, while
+Android keeps its Compose Navigation 3 and Material 3 navigation unchanged.
 
-## What is it?
+> **Status:** early development. Native stacks and tabs synced with Navigation 3 back stacks,
+> and the scroll bridge for the iOS navigation bar, work and are verified on iOS 27.2 and 18.5
+> simulators. Not yet available: bar button / toolbar API, iOS state restoration after process death.
 
-This repository contains a simple library project, intended to demonstrate a [Kotlin Multiplatform](https://kotlinlang.org/docs/multiplatform.html) library that is deployable to [Maven Central](https://central.sonatype.com/).
+## Navigation 3 on iOS
 
-The library has only one function: generate the [Fibonacci sequence](https://en.wikipedia.org/wiki/Fibonacci_sequence) starting from platform-provided numbers. Also, it has a test for each platform just to be sure that tests run.
+Routes, back stacks, the `entryProvider` and the screens stay in common code. Android keeps
+using `NavDisplay`; iOS shows the same back stacks with `UITabBarController` /
+`UINavigationController`:
 
-Note that no other actions or tools usually required for the library development are set up, such as [tracking of backwards compatibility](https://kotlinlang.org/docs/jvm-api-guidelines-backward-compatibility.html#tools-designed-to-enforce-backward-compatibility), explicit API mode, licensing, contribution guideline, code of conduct and others. You can find a guide for best practices for designing Kotlin libraries [here](https://kotlinlang.org/docs/api-guidelines-introduction.html).
+```kotlin
+// commonMain: screen chrome lives in entry metadata
+val entryProvider = entryProvider<NavKey> {
+    entry<Home>(metadata = nativeScreen(title = "Home", largeTitle = true)) { HomeScreen() }
+    entry<Detail>(metadata = { key -> nativeScreen(title = "Detail ${key.id}", hidesTabBar = true) }) { DetailScreen(it.id) }
+}
+
+// iosMain
+fun MainViewController() = NativeNavigationViewController {
+    val home = rememberNavBackStack(config, Home)
+    val settings = rememberNavBackStack(config, Settings)
+    var selected by rememberSaveable { mutableIntStateOf(0) }
+    NativeTabs(
+        tabs = listOf(NativeTab("Home", "house", home), NativeTab("Settings", "gearshape", settings)),
+        selectedTab = selected,
+        onTabSelected = { selected = it },
+        entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator(), rememberViewModelStoreNavEntryDecorator()),
+        entryProvider = entryProvider,
+    )
+}
+```
+
+- The Kotlin back stack is the source of truth: adding/removing/replacing keys pushes, pops or
+  sets the native stack (deep links included). Native back button, edge swipe, back menu and tab
+  re-tap call `onBack()` once per popped screen; a cancelled swipe changes nothing.
+- Each entry is its own native screen, so decorators (saveable state, per-entry ViewModels) keep
+  Navigation 3 semantics, including clean-up when an entry is popped.
+- Use `NativeStack(backStack, ...)` for a single stack without tabs.
+- The content block of `NativeNavigationViewController` holds navigation state only; it must not draw UI.
+
+## Scroll bridge (iOS navigation bar ⇄ Compose list)
+
+UIKit only collapses a large title, switches the bar to its scrolled appearance and applies the
+iOS 26 scroll edge effect for a `UIScrollView` that the user actually pans. Compose has no such
+scroll view, so this library puts one behind each screen: it owns the vertical gesture and
+physics, and the Compose list follows it.
+
+Shared screen code:
+
+```kotlin
+val listState = rememberLazyListState()
+val nativeScroll = rememberNativeScroll(listState) // also accepts a ScrollState
+
+LazyColumn(
+    state = listState,
+    userScrollEnabled = nativeScroll.userScrollEnabled,
+    contentPadding = nativeScroll.contentPadding,
+) { /* ... */ }
+```
+
+On Android, desktop and web this is a no-op (`userScrollEnabled = true`, zero padding).
+Screens that do not scroll use `nativeContentPadding()` instead.
+
+iOS (`iosMain`), hosting the screen in a native navigation controller:
+
+```kotlin
+val screen = ComposeScreenViewController { MyScreen() }
+screen.title = "Title"
+val navigation = UINavigationController(rootViewController = screen).apply {
+    navigationBar.prefersLargeTitles = true
+}
+```
+
+Known limitations (see `AGENTS.md`, section 6.5): one connected vertical scroll container per
+screen; Compose gestures that drag vertically conflict with the native pan; no native scroll
+indicator for lazy lists; `LazyGridState` is not supported yet.
+
+## Platforms
+
+Android, JVM (desktop), iOS (`iosArm64`, `iosSimulatorArm64`, iOS 18.2+), JS and Wasm (browser).
 
 ## Project structure
 
-The example apps follow the [default Kotlin Multiplatform project structure](https://kotlinlang.org/docs/multiplatform/multiplatform-project-recommended-structure.html) introduced for Android Gradle Plugin 9: one shared Kotlin Multiplatform library module plus a thin entry-point module per platform.
-
 ```
 .
-├── library/              # The published KMP library (android, jvm, iosArm64, iosSimulatorArm64, linuxX64, js, wasmJs)
+├── library/              # The published library (zone.ien.navigation:compose-swift-navigation3)
 └── example/
-    ├── shared/           # Shared Compose Multiplatform UI (KMP library, depends on :library)
-    ├── androidApp/       # Android entry point (com.android.application)
+    ├── shared/           # Shared Compose UI of the example app (depends on :library)
+    ├── androidApp/       # Android entry point
     ├── desktopApp/       # Desktop (JVM) entry point
     └── iosApp/           # iOS entry point (Xcode project, imports the `Shared` framework)
 ```
 
-| Module | Gradle plugins |
-| --- | --- |
-| `:library` | `kotlin.multiplatform`, `com.android.kotlin.multiplatform.library`, `com.vanniktech.maven.publish` |
-| `:example:shared` | `kotlin.multiplatform`, `com.android.kotlin.multiplatform.library`, `org.jetbrains.compose`, `kotlin.plugin.compose` |
-| `:example:androidApp` | `com.android.application` (built-in Kotlin), `kotlin.plugin.compose` |
-| `:example:desktopApp` | `kotlin.jvm`, `org.jetbrains.compose`, `kotlin.plugin.compose` |
-
 ### Running the examples
 
-* **Android**: run the `example.androidApp` configuration, or `./gradlew :example:androidApp:installDebug`
+* **Android**: `./gradlew :example:androidApp:installDebug`
 * **Desktop**: `./gradlew :example:desktopApp:run`
 * **iOS**: open `example/iosApp/iosApp.xcodeproj` in Xcode and run. The build phase calls `./gradlew :example:shared:embedAndSignAppleFrameworkForXcode`.
 
 ### Running the tests
 
-* `./gradlew jvmTest` / `testAndroidHostTest` / `iosSimulatorArm64Test` / `jsTest` / `wasmJsTest` / `linuxX64Test` (Linux host only)
+* `./gradlew jvmTest testAndroidHostTest iosSimulatorArm64Test jsTest wasmJsTest`
+* Web tests run in a headless browser. When web dependencies change, run `./gradlew kotlinUpgradeYarnLock kotlinWasmUpgradeYarnLock`.
 
 ### JDK
 
-The Gradle daemon JVM is pinned in `gradle/gradle-daemon-jvm.properties` (JetBrains Runtime 25, the JDK bundled with Android Studio), so `./gradlew` behaves the same regardless of `JAVA_HOME`; Gradle downloads it automatically if it isn't installed. Sources are compiled with a JDK 17 toolchain (`jvmToolchain(17)`), auto-provisioned through the foojay resolver when missing.
-To change the daemon JVM, run `./gradlew updateDaemonJvm --jvm-version=<version> --jvm-vendor=<vendor>`.
+The Gradle daemon JVM is pinned in `gradle/gradle-daemon-jvm.properties` (JetBrains Runtime 25), so `./gradlew` behaves the same regardless of `JAVA_HOME`. Sources are compiled with a JDK 17 toolchain (`jvmToolchain(17)`), auto-provisioned through the foojay resolver when missing.
 
-## Guide
+## Contributing
 
-Please find the detailed guide [here](https://www.jetbrains.com/help/kotlin-multiplatform-dev/multiplatform-publish-libraries.html).
+Read [`AGENTS.md`](AGENTS.md) first: it holds the goals, the architecture decisions and how changes are verified.
 
-# Other resources
-* [Publishing via the Central Portal](https://central.sonatype.org/publish-ea/publish-ea-guide/)
-* [Gradle Maven Publish Plugin \- Publishing to Maven Central](https://vanniktech.github.io/gradle-maven-publish-plugin/central/)
+## License
+
+[Apache License 2.0](LICENSE)
