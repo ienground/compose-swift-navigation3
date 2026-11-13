@@ -12,7 +12,7 @@ final class GestureUITests: ExampleAppTestCase {
         tapBack(); pause(1.2)
         expectText("Back intercepted: 1", "G3a"); expectText("Guard back: on", "G3b")
 
-        log("PHASE G4 edge swipe -> handler (Compose edge gesture), no pop")
+        log("PHASE G4 edge swipe -> handler (predictive back from the library swipe), no pop")
         edgeSwipe(distance: 300, velocity: 1000, hold: 0); pause(1.5)
         expectText("Back intercepted: 2", "G4")
 
@@ -25,9 +25,28 @@ final class GestureUITests: ExampleAppTestCase {
         edgeSwipe(distance: 300, velocity: 1000, hold: 0); pause(1.5)
         expectText("Back intercepted: 3", "G6")
 
-        log("PHASE G7 guard off -> native back pops")
+        log("PHASE G7 guard off -> native back pops (the forward-only handler does not take back)")
         tap("Guard back: on"); pause(0.5)
         tapBack(); pause(1.5); expectText("Row 3", "G7")
+
+        log("PHASE G8 guard off -> edge swipe pops natively")
+        tap("Row 5"); pause(1.5); expectText("Detail 5", "G8a")
+        edgeSwipe(distance: 320, velocity: 1200, hold: 0); pause(1.5)
+        expectText("Row 5", "G8b")
+        log("DONE")
+    }
+
+    /// A back handler on a tab's root screen must not give it a back button.
+    func testRootHandlerHasNoBackButton() throws {
+        launch()
+        app.tabBars.buttons["Settings"].tap(); pause(1)
+        tap("Root guard: off"); pause(0.5); expectText("Root guard: on", "R1")
+        // Change the leading bar item while the guard is on: the left items are set again.
+        app.navigationBars.buttons["Taps: 0"].tap(); pause(1)
+        let labels = app.navigationBars.buttons.allElementsBoundByIndex.map { $0.label }
+        log("CHECK R2 bar buttons on the root: \(labels)")
+        XCTAssertEqual(labels, ["Taps: 1"], "a root screen must not show a back button")
+        tap("Root guard: on"); pause(0.5); expectText("Root guard: off", "R3")
         log("DONE")
     }
 

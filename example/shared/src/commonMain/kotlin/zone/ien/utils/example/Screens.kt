@@ -48,6 +48,7 @@ import kotlin.math.roundToInt
 import androidx.lifecycle.ViewModel
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.NavigationEventHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import zone.ien.navigation.NativeBarButton
@@ -198,6 +199,14 @@ fun DetailScreen(id: Int, navigation: AppNavigation) {
         Button(onClick = { guardBack = !guardBack }) { Text(if (guardBack) "Guard back: on" else "Guard back: off") }
         Text("Back intercepted: $intercepted")
 
+        // A handler enabled only for forward navigation (NavigationEventHandler's default
+        // isForwardEnabled = true, as in a dirty-check guard that is currently off) does not
+        // take back: the back button and the edge swipe still pop natively.
+        NavigationEventHandler(
+            state = rememberNavigationEventState(NavigationEventInfo.None),
+            isBackEnabled = false,
+        )
+
         // Vertical drags inside the pad go to Compose, not to the native page scroll.
         var pad by rememberSaveable { mutableFloatStateOf(0f) }
         Box(
@@ -282,6 +291,10 @@ private fun Tile(label: String, height: Dp, onClick: () -> Unit) {
 fun SettingsScreen(navigation: AppNavigation) {
     LogComposition("Settings")
     var taps by rememberSaveable { mutableIntStateOf(0) }
+    // A leading bar item on a root screen that changes with the state: when the left items are
+    // set again while the screen's back action is set, UIKit shows a back button even on the root
+    // (see the root guard below).
+    NativeBarItems(leading = listOf(NativeBarButton("Taps: $taps") { taps++ }))
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -292,6 +305,15 @@ fun SettingsScreen(navigation: AppNavigation) {
     ) {
         Text("Settings taps: $taps")
         Button(onClick = { taps++ }) { Text("Tap settings") }
+        // A back handler on a tab's root screen (e.g. an open dialog's) does not add a back
+        // button to it on iOS. On Android it keeps system back from leaving the app while on.
+        var guardRoot by rememberSaveable { mutableStateOf(false) }
+        NavigationBackHandler(
+            state = rememberNavigationEventState(NavigationEventInfo.None),
+            isBackEnabled = guardRoot,
+            onBackCompleted = {},
+        )
+        Button(onClick = { guardRoot = !guardRoot }) { Text(if (guardRoot) "Root guard: on" else "Root guard: off") }
         // Replaces the tabs with the sign-in stack (on iOS: the root tab bar controller is swapped).
         Button(onClick = navigation::signOut) { Text("Sign out") }
     }

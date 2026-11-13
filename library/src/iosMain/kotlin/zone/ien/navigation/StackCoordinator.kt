@@ -58,6 +58,7 @@ internal class StackCoordinator(
      */
     fun dispose() {
         navigationController.delegate = null
+        NativeBackSwipe.installed(navigationController)?.dispose()
         val removed = screens
         screens = emptyList()
         target = emptyList()
@@ -93,6 +94,12 @@ internal class StackCoordinator(
             is StackUpdate.None -> Unit
         }
         removed.forEach { it.markRemoved() }
+        updateBackActions()
+    }
+
+    /** A screen may have become the root (or stopped being it): only non-root screens route the back button. */
+    private fun updateBackActions() {
+        screens.forEach { it.controller.backHandling.updateBackAction() }
     }
 
     private fun onDidShow() {
@@ -109,6 +116,7 @@ internal class StackCoordinator(
             removed.forEach { it.markRemoved() }
             repeat(popped) { onBack() }
             Snapshot.sendApplyNotifications()
+            updateBackActions()
         }
         // Apply what arrived during the transition (or re-push if the app refused the pop).
         apply()

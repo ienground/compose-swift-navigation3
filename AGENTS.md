@@ -189,7 +189,7 @@ python3 -I example/iosUITests/timeline.py build/ui-tests/<UDID>               # 
   - `NavigationUITests`: 6.6장 동기화, 루트 전환(`testRootSwitch`)
   - `BarItemsUITests`: 6.7장 바 아이템
   - `RestorationUITests`: 6.8장 상태 복원, 로그아웃 상태(로그인 스택) 복원
-  - `GestureUITests`: 6.9장 뒤로가기 핸들러, 6.5장 세로 드래그 제외 영역과 `ScrollState`
+  - `GestureUITests`: 6.9장 뒤로가기 핸들러(forward 전용 핸들러, 루트 뒤로 버튼 포함), 6.5장 세로 드래그 제외 영역과 `ScrollState`
   - `SearchUITests`: 6.10장 검색과 키보드 여백
   - `GridUITests`: 6.5장 그리드(`LazyGridState`, `LazyStaggeredGridState`) 스크롤 연동
   - `ScrollUITests`에는 탭 전환 후 스크롤 유지와 가로 화면 테스트도 있다.
@@ -199,6 +199,12 @@ python3 -I example/iosUITests/timeline.py build/ui-tests/<UDID>               # 
     - 원인은 시뮬레이터 설정이었다. Mac 키보드로 입력한 적이 있는 시뮬레이터는 하드웨어 키보드가 있다고 보고 소프트웨어 키보드를 숨긴다(`com.apple.keyboard.preferences`의 `AutomaticMinimizationEnabled`).
     - 키보드가 없으면 걸러진 리스트가 스크롤 없이 화면에 다 들어간다. 그래서 검색어를 지우면 맨 위(Row 0)가 보이는 것이 맞다. 테스트는 Row 40까지 스크롤돼 있다고 가정했다.
     - 그래서 `run.sh`가 이 값을 끄고, 테스트는 소프트웨어 키보드가 보이는지 먼저 확인한다.
+- 2026-11-14 뒤로가기 처리를 바꾼 뒤(6.9장) 14개(`testRootHandlerHasNoBackButton` 추가)를 실행했다.
+  - iOS 27.2: 14개 모두 통과했다.
+  - iOS 18.5: 새로 만든 시뮬레이터에서 14개 모두 통과했다.
+  - 오래 쓴 iOS 18.5 시뮬레이터에서는 복원 테스트가 재실행 때 저장 데이터를 받지 못했다(`RESTORE none`). 수정 전 라이브러리에서도 같은 일이 있었다.
+    - 원인: iOS가 이전 장면 세션을 다시 연결하지 않고 새 세션을 만들었다. 시스템 로그에서 재실행 직후 "Persistent SceneSession Map Update"가 찍히는 쪽이 실패한 경우다.
+    - 앱 문제가 아니라 시뮬레이터 상태 문제다. 복원 테스트가 `RESTORE none`으로 실패하면 새 시뮬레이터(`xcrun simctl create`)에서 다시 확인한다.
 - 모든 테스트는 `-freshStart`로 시작해 복원된 상태를 무시한다. 복원 테스트만 두 번째 실행에서 이 인자를 뺀다.
 
 ## 6. 아키텍처 방향
@@ -399,7 +405,7 @@ iOS에서는 탑바 전체가 시스템 `UINavigationBar`다. Compose는 바 아
 **확인한 Compose Multiplatform 동작** (1.12.2 소스)
 - `ComposeUIViewController`는 자신이나 상위 컨트롤러가 window hierarchy에 있으면 composition을 유지한다(`CMPViewController.m`의 `cmp_isInWindowHierarchy`). 그래서 스택에서 가려진 화면은 composition이 살아 있다.
 - 컨트롤러가 hierarchy를 떠나면 0.5초 주기 검사나 dealloc 시점에 scene을 dispose한다.
-- CMP는 composition에 활성 `BackHandler`나 NavigationEvent 핸들러가 있으면, window 바로 아래 뷰에 자체 가장자리 스와이프 recognizer를 켠다(`UIKitNavigationEventInput`). 화면 뷰가 window에 있을 때만 붙인다. 이 recognizer와 `UINavigationController` 스와이프의 조정은 6.9장에서 다룬다.
+- CMP는 composition에 활성 `BackHandler`나 NavigationEvent 핸들러가 있으면, window 바로 아래 뷰에 자체 가장자리 스와이프 recognizer를 켠다(`UIKitNavigationEventInput`). 화면 뷰가 window에 있을 때만 붙인다. 라이브러리 화면은 콘텐츠에 자체 dispatcher를 제공하므로 이 recognizer를 쓰지 않는다(6.9장).
 
 **API 사용 예** (예제 `MainViewController.kt`)
 ```kotlin
@@ -529,28 +535,41 @@ ViewModel은 저장하지 않는다(Android도 프로세스가 죽으면 잃는�
 
 ### 6.9 화면 안의 뒤로가기 핸들러 (iOS)
 
-화면 Composable 안의 `BackHandler`(deprecated)와 `NavigationBackHandler`(navigationevent)를 Android와 같은 의미로 연결한다.
-- 핸들러가 켜져 있으면 뒤로가기는 pop하지 않고 핸들러로 간다.
-- 꺼져 있으면 네이티브 pop이 된다.
+화면 Composable 안의 `BackHandler`(deprecated), `NavigationBackHandler`, `NavigationEventHandler`(navigationevent)를 Android와 같은 의미로 연결한다.
+- 뒤로가기(back)가 켜진 핸들러가 있으면 뒤로가기는 pop하지 않고 그중 가장 위의 핸들러로 간다.
+- 없으면 네이티브 pop이 된다. 앞으로 가기(forward)만 켜진 핸들러는 뒤로가기를 받지 않는다. `NavigationEventHandler`는 `isForwardEnabled`가 기본 `true`라서, 저장 확인 가드를 꺼 둔 화면이 흔히 이 경우다.
 
-**구현** (`NativeBackHandling.kt`)
-- 화면마다 CMP가 제공하는 `NavigationEventDispatcher`에 라이브러리 입력(`NavigationEventInput`)을 추가한다.
-  - `onHasEnabledHandlersChanged`로 활성 핸들러 유무를 안다.
-  - `dispatchOnBackCompleted()`로 뒤로가기를 보낸다.
-- **활성 핸들러가 있을 때**
-  - 네이티브 뒤로 버튼은 모양을 유지하고, `navigationItem.backAction`(iOS 16+)이 핸들러를 호출한다.
-  - `UINavigationController`의 스와이프 pop(`interactivePopGestureRecognizer`)을 끈다. 대신 CMP의 가장자리 스와이프가 진행 상황(predictive back)과 함께 핸들러로 간다.
-- **스와이프 on/off 시점**: 맨 위 화면의 `viewDidAppear`에서만 바꾼다. 전환 중에는 바꾸지 않는다. `viewWillAppear`에서 바꾸면, 가드가 걸린 화면이 드러나는 진행 중의 스와이프 pop이 취소된다.
+**구현** (`NativeBackHandling.kt`, `NativeBackSwipe.kt`)
+- **화면 전용 dispatcher**: 화면마다 `NavigationEventDispatcher`를 만들어 콘텐츠에 `LocalNavigationEventDispatcherOwner`로 제공한다. 콘텐츠의 핸들러는 CMP의 dispatcher가 아니라 여기에 등록된다.
+  - navigationevent는 활성 핸들러 유무를 back과 forward를 합쳐서만 알려 준다(`onHasEnabledHandlersChanged`). 그래서 뒤로가기를 받을 핸들러를 미리 정하지 않고, dispatcher가 실제로 보낼 때 고르게 한다(back이 켜진 핸들러 중 가장 위).
+  - CMP의 dispatcher에는 핸들러가 없으므로 CMP의 자체 가장자리 스와이프는 켜지지 않는다.
+- **뒤로 버튼**: 활성 핸들러가 있는 동안 `navigationItem.backAction`(iOS 16+)이 dispatcher로 뒤로가기를 보낸다. 받는 핸들러가 없으면 dispatcher의 fallback(`onBackCompletedFallback`)이 네이티브 pop을 한다.
+  - 루트 화면에는 `backAction`을 두지 않는다. 루트에 `backAction`이 있는 채로 왼쪽 바 아이템이 다시 설정되면 UIKit이 루트에도 뒤로 버튼을 보인다(실측).
+  - 화면의 위치가 바뀔 수 있으므로 나타날 때(`viewWillAppear`)와 스택이 바뀔 때마다 다시 정한다.
+- **가장자리 스와이프**: 내비게이션 컨트롤러마다 `UIScreenEdgePanGestureRecognizer`를 하나 둔다(`NativeBackSwipe`). `interactivePopGestureRecognizer`는 이것이 실패하기를 기다린다.
+  - 스와이프가 시작될 때 맨 위 화면이 정한다. 가장 낮은 우선순위의 탐지 핸들러를 잠깐 켜고 시작 이벤트를 보낸다.
+  - 콘텐츠 핸들러가 받으면 진행 이벤트(predictive back)와 완료·취소를 계속 그 핸들러에 보낸다.
+  - 탐지 핸들러가 받으면 취소하고 recognizer를 실패시킨다. 그러면 UIKit 인터랙티브 pop이 동작한다. 콘텐츠 핸들러에는 아무 이벤트도 가지 않는다.
+  - 완료 여부는 손을 뗄 때 정한다. 빠르게 튕기면 방향으로, 아니면 화면 절반을 넘었는지로 정한다(`BackSwipeDecision.kt`, `commonTest`).
+  - 라이브러리 화면이 처음 나타날 때(`viewWillAppear`) 그 내비게이션 컨트롤러에 한 번 설치한다. 그래서 앱이 직접 만든 `UINavigationController`에 단독 화면(`ComposeScreenViewController`)을 넣어도 동작한다.
+  - 내비게이션 컨트롤러의 뷰가 recognizer를, recognizer가 스와이프 객체를 잡는다. 스와이프 객체는 내비게이션 컨트롤러를 약하게 참조해 순환을 만들지 않는다(6.3장 7). 뒤로 버튼의 `UIAction`도 화면을 약하게 참조한다.
+  - 계층이 루트에서 내려가면(`StackCoordinator.dispose`) 진행 중인 스와이프를 취소하고 recognizer를 끈다. recognizer는 내비게이션 컨트롤러와 함께 사라진다.
 
-**검증** (`GestureUITests.testBackHandler`)
-- 가드를 켠 Detail 3에서 뒤로 버튼과 가장자리 스와이프가 각각 핸들러로 갔다. pop은 없었다.
-- 그 위로 push한 Detail 4에서는 네이티브 스와이프로 정상 pop됐다.
-- 다시 드러난 Detail 3에서 스와이프가 다시 가로채졌다.
-- 가드를 끄자 뒤로 버튼으로 pop됐다.
+**검증** (2026-11-14)
+- `NativeBackHandlingTest`(iosTest, 실제 dispatcher와 UIKit 컨트롤러)
+  - forward 전용 핸들러는 스와이프와 버튼을 받지 않고, 버튼은 pop한다.
+  - back 핸들러는 스와이프(시작·진행·완료·취소)와 버튼을 받는다.
+  - 루트 화면에는 `backAction`이 없다.
+- `GestureUITests`(실제 터치)
+  - `testBackHandler`: 가드를 켠 Detail 3에서 뒤로 버튼과 스와이프가 핸들러로 갔고 pop은 없었다. 그 위 Detail 4는 네이티브 스와이프로 pop됐다. 가드를 끄면 뒤로 버튼과 스와이프로 pop된다.
+  - Detail 화면에는 forward 전용 핸들러를 항상 둔다. 그래서 Detail을 쓰는 모든 테스트(`NavigationUITests` 포함)가 이 경로를 지난다. 수정 전 코드에서는 G5b(스와이프가 pop되지 않음)에서 실패했다.
+  - `testRootHandlerHasNoBackButton`: Settings 탭 루트에서 핸들러를 켜고 왼쪽 바 아이템을 바꿔도 뒤로 버튼이 없다. 수정 전 코드에서는 `Back` 버튼이 생겨 실패했다.
+- 두 문제는 Hotpot 앱 연동에서 발견했다. 저장 확인용 `NavigationEventHandler`가 있는 화면에서 뒤로가기가 막혔고, 바텀시트(Compose `Dialog`)를 쓴 뒤 탭 루트에 뒤로 버튼이 생겼다. 고친 라이브러리로 두 화면 모두 정상인 것을 실제 터치로 확인했다.
 
 **한계**
 - 뒤로 버튼을 길게 눌러 여는 메뉴로 여러 단계를 한 번에 pop하면 핸들러를 거치지 않는다.
-- 핸들러가 있는 화면에서는 스와이프 모양이 CMP 제스처의 것이다(UIKit 전환 애니메이션이 아님).
+- 핸들러가 받은 스와이프에는 UIKit 전환 애니메이션이 없다. 화면이 진행 이벤트로 직접 표현해야 한다.
+- CMP의 dispatcher에 직접 연결된 다른 입력(예: 하드웨어 키보드)이 있다면, 그 뒤로가기는 화면 핸들러에 닿지 않는다. 확인하지 않았다.
 
 ### 6.10 검색 (iOS)
 
@@ -593,11 +612,12 @@ ViewModel은 저장하지 않는다(Android도 프로세스가 죽으면 잃는�
 | 2026-11-13 | iOS UI 테스트 하네스를 `example/iosUITests`(별도 Xcode 프로젝트)로 저장소에 둔다. | 저장소 밖 임시 디렉터리에 두었던 하네스가 사라진 일이 있었다. 예제 앱 Xcode 프로젝트를 바꾸지 않고 설치된 앱을 bundle id로 구동한다. |
 | 2026-11-13 | iOS 상태 복원은 라이브러리가 `NSData`를 주고받고, 저장소는 앱이 고른다(예제: `@SceneStorage`). 저장은 `.inactive`에서 한다. | 시스템 의미(백그라운드 종료 시 복원, 강제 종료 시 폐기, scene별 저장)를 그대로 얻는다. 대안이었던 라이브러리 파일 저장은 강제 종료를 구분할 수 없어 네이티브와 다르게 동작한다. 앱 쪽 Swift는 약 15줄이다. |
 | 2026-11-13 | 호스트의 `canBeSaved`는 모든 값을 허용하고, 저장할 때 직렬화할 수 없는 registry 항목만 뺀다. | Android처럼 등록 시점에 막으면 enum 같은 값을 쓰는 공통 코드가 iOS에서 크래시한다. 빠진 항목만 초기값으로 돌아가는 편이 안전하다. |
-| 2026-11-13 | 화면 안의 뒤로가기 핸들러가 켜져 있으면 iOS 뒤로 버튼(`backAction`)과 스와이프(CMP 제스처)를 핸들러로 보내고, `UINavigationController` 스와이프 pop을 끈다. | Android의 `BackHandler` 의미와 같다. 두 스와이프 recognizer가 경쟁하지 않는다. 대안이었던 "핸들러 무시하고 항상 네이티브 pop"은 저장 확인 같은 흔한 패턴을 깨뜨린다. |
+| 2026-11-13 | 화면 안의 뒤로가기 핸들러가 켜져 있으면 iOS 뒤로 버튼(`backAction`)과 스와이프(CMP 제스처)를 핸들러로 보내고, `UINavigationController` 스와이프 pop을 끈다. (아래 결정으로 구현 방식이 바뀜) | Android의 `BackHandler` 의미와 같다. 두 스와이프 recognizer가 경쟁하지 않는다. 대안이었던 "핸들러 무시하고 항상 네이티브 pop"은 저장 확인 같은 흔한 패턴을 깨뜨린다. |
 | 2026-11-13 | 세로 드래그 충돌은 요소 단위 제외(`Modifier.nativeScrollExclusion()`)로 푼다. | 제외 영역에서 시작한 pan만 Compose에 넘기면 나머지 화면은 네이티브 스크롤을 유지한다. 대안이었던 화면 단위로 네이티브 스크롤을 끄는 방식은 큰 타이틀 연동을 잃는다. |
 | 2026-11-13 | iOS 26 미만에서도 네이티브 컨트롤러를 쓴다. Liquid Glass만 iOS 26 이상에서 시스템이 적용한다. | 지원하는 모든 iOS 버전에서 내비게이션 코드 경로가 하나다. 대안이었던 KotlinConf 방식(26 미만은 Compose 내비게이션으로 대체)은 iOS에서 두 경로를 유지해야 해서 택하지 않았다. |
 | 2026-11-13 | 복원 데이터로 시작한 호스트의 첫 composition이 실패하면, 데이터를 버리고 한 번 새로 시작한다. | 이전 버전의 저장 구조가 맞지 않아 나는 예외는 iOS가 같은 scene 데이터를 계속 주기 때문에 실행마다 반복된다(실측). 대안이었던 "그대로 크래시"는 사용자가 앱을 강제 종료하거나 재설치하기 전까지 앱을 쓸 수 없게 만든다. `stateVersion`이 정확한 수단이고, 이것은 안전장치다. 복원 데이터 없이 실패하면 앱 오류로 보고 그대로 던진다. |
 | 2026-11-13 | 루트 선언(`NativeStack`/`NativeTabs`)을 실행 중에 바꿀 수 있게 한다. 바뀌면 이전 계층을 내리고 교차 페이드로 새 계층을 보인다. 탭 바는 계속 루트에만 둔다. | 로그인 → 메인 탭 같은 흐름을 Navigation 3 코드에서 `if`로 그대로 쓸 수 있다. 의미는 `NavDisplay`가 composition을 떠날 때와 같다. 검토한 대안: 중첩 탭(push한 화면 안의 `UITabBarController`)은 iOS 관례가 아니다. 앱이 Swift에서 `NativeNavigationViewController`를 두 개 갈아 끼우는 방식은 호스트 composition이 나뉘어 상태 공유와 복원이 어렵다. 모달 API는 별도 작업으로 남긴다. |
+| 2026-11-14 | 화면 콘텐츠의 뒤로가기 핸들러를 화면 전용 dispatcher에 모은다. 뒤로 버튼은 dispatcher의 fallback으로, 스와이프는 시작 시점의 판별로 처리한다. 루트 화면에는 `backAction`을 두지 않는다(6.9장). | navigationevent는 back과 forward를 합친 활성 여부만 알려 준다. 그래서 이전 방식(활성 핸들러가 있으면 가로챔)은 forward만 켜진 핸들러(`NavigationEventHandler` 기본값)가 있는 화면의 뒤로가기를 막았다(Hotpot에서 발견). 검토한 대안: 앱에 `isForwardEnabled = false`를 요구하는 방식은 실수하기 쉽고 기본값과 어긋난다. 비용: CMP의 가장자리 스와이프 대신 라이브러리의 recognizer를 쓴다. |
 
 ## 8. 작업 흐름과 검증
 

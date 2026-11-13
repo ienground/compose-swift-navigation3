@@ -16,6 +16,7 @@ import platform.UIKit.UIViewController
 import platform.UIKit.addChildViewController
 import platform.UIKit.didMoveToParentViewController
 import platform.UIKit.hidesBottomBarWhenPushed
+import platform.UIKit.navigationController
 import platform.UIKit.navigationItem
 
 /**
@@ -42,21 +43,17 @@ internal class ComposeScreenController(
     private val proxy = ScrollProxy()
     private val barState = NativeBarState()
     val bar = NativeBarApplier(this)
-    private val backHandling = NativeBackHandling(this)
+    val backHandling = NativeBackHandling(this)
     private val keyboardInset = KeyboardInset(proxy.scrollView)
 
     private val composeController = ComposeUIViewController {
         CompositionLocalProvider(
             LocalNativeScrollHost provides proxy,
             LocalNativeBarState provides barState,
+            // Back handlers of the content register with this screen's dispatcher, which routes
+            // native back to them (NativeBackHandling), instead of Compose Multiplatform's.
+            LocalNavigationEventDispatcherOwner provides backHandling.dispatcherOwner,
         ) {
-            // Learn about back handlers in the content and deliver native back to them.
-            val dispatcherOwner = LocalNavigationEventDispatcherOwner.current
-            DisposableEffect(dispatcherOwner) {
-                val dispatcher = dispatcherOwner?.navigationEventDispatcher
-                dispatcher?.addInput(backHandling)
-                onDispose { dispatcher?.removeInput(backHandling) }
-            }
             content()
             // Recorded after the content's effects, so NativeBarItems below registered first.
             SideEffect { bar.onComposed() }
@@ -86,11 +83,6 @@ internal class ComposeScreenController(
         proxy.updateInsets()
     }
 
-    override fun viewDidAppear(animated: Boolean) {
-        super.viewDidAppear(animated)
-        backHandling.updateEdgeSwipe()
-    }
-
     override fun viewDidDisappear(animated: Boolean) {
         super.viewDidDisappear(animated)
         keyboardInset.stop()
@@ -101,6 +93,8 @@ internal class ComposeScreenController(
         // The appearing screen decides whether the navigation controller's toolbar is shown
         // (also when an interactive pop is cancelled and this screen appears again).
         bar.updateToolbarVisibility(animated, onlyIfTop = false)
+        navigationController?.let(NativeBackSwipe::install)
+        backHandling.updateBackAction()
         keyboardInset.start()
         onWillAppear()
     }
