@@ -5,6 +5,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -24,18 +25,31 @@ import zone.ien.navigation.nativeScreen
 data object HomeRoute : NavKey
 
 @Serializable
+data object GalleryRoute : NavKey
+
+@Serializable
 data object SettingsRoute : NavKey
 
 @Serializable
 data class DetailRoute(val id: Int) : NavKey
+
+/** Signed-out flow: its own stack, shown instead of the tabs. */
+@Serializable
+data object SignInRoute : NavKey
+
+@Serializable
+data object SignInHelpRoute : NavKey
 
 /** Non-Android targets need the NavKey subclasses registered to save the back stacks. */
 private val navigationConfiguration = SavedStateConfiguration {
     serializersModule = SerializersModule {
         polymorphic(NavKey::class) {
             subclass(HomeRoute::class)
+            subclass(GalleryRoute::class)
             subclass(SettingsRoute::class)
             subclass(DetailRoute::class)
+            subclass(SignInRoute::class)
+            subclass(SignInHelpRoute::class)
         }
     }
 }
@@ -44,14 +58,35 @@ private val navigationConfiguration = SavedStateConfiguration {
 var appLog: (String) -> Unit = {}
 
 /**
- * The app's navigation state: one Navigation 3 back stack per tab. Shared by every platform;
- * Android/desktop render it with NavDisplay, iOS with the native controllers.
+ * The app's navigation state: one Navigation 3 back stack per tab, and a separate sign-in stack
+ * shown instead of the tabs while signed out. Shared by every platform; Android/desktop render it
+ * with NavDisplay, iOS with the native controllers.
  */
 @Stable
-class AppNavigation(val stacks: List<NavBackStack<NavKey>>, initialTab: Int) {
+class AppNavigation(
+    val stacks: List<NavBackStack<NavKey>>,
+    val signInStack: NavBackStack<NavKey>,
+    initialTab: Int,
+    initialSignedIn: Boolean,
+) {
     var selectedTab by mutableIntStateOf(initialTab)
+    var signedIn by mutableStateOf(initialSignedIn)
+        private set
 
-    val currentStack: NavBackStack<NavKey> get() = stacks[selectedTab]
+    val currentStack: NavBackStack<NavKey> get() = if (signedIn) stacks[selectedTab] else signInStack
+
+    /** Leaves the sign-in flow for the tabs (iOS switches the root to the tab bar controller). */
+    fun signIn() {
+        signedIn = true
+        signInStack.resetTo(SignInRoute)
+    }
+
+    /** Leaves the tabs for the sign-in flow; the tabs start over at their roots next time. */
+    fun signOut() {
+        signedIn = false
+        selectedTab = 0
+        stacks.forEach { stack -> stack.resetTo(stack.first()) }
+    }
 
     fun open(route: NavKey) {
         currentStack.add(route)
@@ -77,19 +112,35 @@ class AppNavigation(val stacks: List<NavBackStack<NavKey>>, initialTab: Int) {
         stack.addAll(routes)
     }
 
-    fun describe(): String = "tab=$selectedTab " + stacks.joinToString(" | ") { stack ->
-        stack.joinToString(",") { it.toString() }
+    fun describe(): String = if (!signedIn) {
+        "signedOut " + signInStack.joinToString(",") { it.toString() }
+    } else {
+        "tab=$selectedTab " + stacks.joinToString(" | ") { stack -> stack.joinToString(",") { it.toString() } }
     }
+}
+
+private fun NavBackStack<NavKey>.resetTo(root: NavKey) {
+    if (size == 1 && first() == root) return
+    clear()
+    add(root)
 }
 
 @Composable
 fun rememberAppNavigation(): AppNavigation {
     val home = rememberNavBackStack(navigationConfiguration, HomeRoute)
+    val gallery = rememberNavBackStack(navigationConfiguration, GalleryRoute)
     val settings = rememberNavBackStack(navigationConfiguration, SettingsRoute)
+    val signIn = rememberNavBackStack(navigationConfiguration, SignInRoute)
     val selectedTab = rememberSaveable { mutableIntStateOf(0) }
-    val navigation = remember(home, settings) { AppNavigation(listOf(home, settings), selectedTab.intValue) }
-    // Keep the saved tab in sync with the state holder.
-    SideEffect { selectedTab.intValue = navigation.selectedTab }
+    val signedIn = rememberSaveable { mutableStateOf(true) }
+    val navigation = remember(home, gallery, settings, signIn) {
+        AppNavigation(listOf(home, gallery, settings), signIn, selectedTab.intValue, signedIn.value)
+    }
+    // Keep the saved values in sync with the state holder.
+    SideEffect {
+        selectedTab.intValue = navigation.selectedTab
+        signedIn.value = navigation.signedIn
+    }
     return navigation
 }
 
@@ -101,7 +152,16 @@ fun appEntryProvider(navigation: AppNavigation): (NavKey) -> NavEntry<NavKey> = 
     entry<DetailRoute>(metadata = { key -> nativeScreen(title = "Detail ${key.id}", hidesTabBar = key.id % 2 == 1) }) { key ->
         DetailScreen(key.id, navigation)
     }
+    entry<GalleryRoute>(metadata = nativeScreen(title = "Gallery", largeTitle = true)) {
+        GalleryScreen(navigation)
+    }
     entry<SettingsRoute>(metadata = nativeScreen(title = "Settings", largeTitle = true)) {
-        SettingsScreen()
+        SettingsScreen(navigation)
+    }
+    entry<SignInRoute>(metadata = nativeScreen(title = "Welcome", largeTitle = true)) {
+        SignInScreen(navigation)
+    }
+    entry<SignInHelpRoute>(metadata = nativeScreen(title = "Help")) {
+        SignInHelpScreen(navigation)
     }
 }

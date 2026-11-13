@@ -15,10 +15,12 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.savedstate.SavedState
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.compose.LocalSavedStateRegistryOwner
+import androidx.savedstate.savedState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -38,16 +40,30 @@ import platform.darwin.dispatch_get_main_queue
  *
  * It provides a lifecycle (RESUMED), a ViewModelStoreOwner, a SavedStateRegistryOwner and a
  * SaveableStateRegistry, so `rememberNavBackStack`, `rememberSaveableStateHolderNavEntryDecorator`
- * and `rememberViewModelStoreNavEntryDecorator` work. Saved state is kept in memory only.
+ * and `rememberViewModelStoreNavEntryDecorator` work.
+ *
+ * [saveState] collects both registries (back stacks, tab selection, and through the
+ * SaveableStateHolder every entry's `rememberSaveable` state, also of screens in other
+ * compositions); [restoredState] feeds such a map back on the next launch.
  */
-internal class HostComposition(private val content: @Composable () -> Unit) {
+internal class HostComposition(
+    private val content: @Composable () -> Unit,
+    restoredState: Map<String, Any?>? = null,
+) {
 
     private val frameClock = BroadcastFrameClock(onNewAwaiters = ::scheduleFrame)
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob() + frameClock)
     private val recomposer = Recomposer(scope.coroutineContext)
     private val composition = Composition(NoUiApplier, recomposer)
-    private val owner = HostOwner()
-    private val saveableStateRegistry = SaveableStateRegistry(restoredValues = null, canBeSaved = { true })
+    private val owner = HostOwner(restoredState?.get(REGISTRY) as? SavedState)
+
+    // Any value can be registered (as in memory before); values that cannot be persisted are
+    // left out when saving (SavedStateCodec.prune).
+    @Suppress("UNCHECKED_CAST")
+    private val saveableStateRegistry = SaveableStateRegistry(
+        restoredValues = restoredState?.get(SAVEABLE) as? Map<String, List<Any?>>,
+        canBeSaved = { true },
+    )
     private var frameScheduled = false
 
     fun start() {
@@ -63,6 +79,11 @@ internal class HostComposition(private val content: @Composable () -> Unit) {
             }
         }
     }
+
+    fun saveState(): Map<String, Any?> = mapOf(
+        SAVEABLE to saveableStateRegistry.performSave(),
+        REGISTRY to savedState().also(owner::save),
+    )
 
     fun dispose() {
         composition.dispose()
@@ -89,7 +110,10 @@ private object NoUiApplier : AbstractApplier<Unit>(Unit) {
     override fun onClear() {}
 }
 
-private class HostOwner : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
+private const val SAVEABLE = "saveable"
+private const val REGISTRY = "registry"
+
+private class HostOwner(restored: SavedState?) : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val savedStateController = SavedStateRegistryController.create(this)
 
@@ -99,7 +123,11 @@ private class HostOwner : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistr
 
     init {
         savedStateController.performAttach()
-        savedStateController.performRestore(null)
+        savedStateController.performRestore(restored)
         lifecycleRegistry.currentState = Lifecycle.State.RESUMED
+    }
+
+    fun save(into: SavedState) {
+        savedStateController.performSave(into)
     }
 }

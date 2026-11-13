@@ -13,6 +13,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -30,9 +37,25 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
+import kotlin.math.roundToInt
 import androidx.lifecycle.ViewModel
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
 import androidx.lifecycle.viewmodel.compose.viewModel
+import zone.ien.navigation.NativeBarButton
+import zone.ien.navigation.NativeBarItems
+import zone.ien.navigation.NativeMenuAction
+import zone.ien.navigation.NativeSearchBar
 import zone.ien.navigation.nativeContentPadding
+import zone.ien.navigation.nativeScrollExclusion
 import zone.ien.navigation.rememberNativeScroll
 
 /** Home: a LazyColumn connected to the native navigation bar; rows open details. */
@@ -40,7 +63,14 @@ import zone.ien.navigation.rememberNativeScroll
 fun HomeScreen(navigation: AppNavigation) {
     LogComposition("Home")
     val listState = rememberLazyListState()
-    val nativeScroll = rememberNativeScroll(listState)
+    val nativeScroll = rememberNativeScroll(listState, background = MaterialTheme.colorScheme.background)
+    NativeBarItems(
+        trailing = listOf(NativeBarButton("Open 42", systemImage = "42.circle") { navigation.open(DetailRoute(42)) }),
+    )
+    // Native search field (UISearchController on iOS); the screen filters its own rows.
+    var query by rememberSaveable { mutableStateOf("") }
+    NativeSearchBar(query = query, onQueryChange = { query = it }, placeholder = "Search rows")
+    val rows = (0 until 100).filter { query.isBlank() || "Row $it".contains(query.trim(), ignoreCase = true) }
 
     LazyColumn(
         state = listState,
@@ -69,7 +99,7 @@ fun HomeScreen(navigation: AppNavigation) {
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             ) { Text("Deep link 3 > 7") }
         }
-        items(100) { index ->
+        items(rows, key = { it }) { index ->
             Text(
                 text = "Row $index",
                 modifier = Modifier
@@ -94,6 +124,14 @@ class DetailViewModel(private val id: Int) : ViewModel() {
         count++
     }
 
+    fun decrement() {
+        if (count > 0) count--
+    }
+
+    fun reset() {
+        count = 0
+    }
+
     override fun onCleared() {
         appLog("VM cleared Detail $id")
     }
@@ -105,7 +143,31 @@ fun DetailScreen(id: Int, navigation: AppNavigation) {
     LogComposition("Detail $id")
     val viewModel = viewModel { DetailViewModel(id) }
     val scrollState = rememberScrollState()
-    val nativeScroll = rememberNativeScroll(scrollState)
+    val nativeScroll = rememberNativeScroll(scrollState, background = MaterialTheme.colorScheme.background)
+
+    // Native bar items follow the ViewModel: dynamic title, menu, toolbar with a disabled state.
+    NativeBarItems(
+        title = if (viewModel.count > 0) "Detail $id (${viewModel.count})" else null,
+        trailing = listOf(
+            NativeBarButton("Add one", systemImage = "plus", onClick = viewModel::increment),
+            NativeBarButton(
+                title = "More",
+                systemImage = "ellipsis.circle",
+                menu = listOf(
+                    NativeMenuAction("Open Detail ${id + 1}", systemImage = "arrow.right") {
+                        navigation.open(DetailRoute(id + 1))
+                    },
+                    NativeMenuAction("Reset count", systemImage = "arrow.counterclockwise", destructive = true) {
+                        viewModel.reset()
+                    },
+                ),
+            ),
+        ),
+        toolbar = listOf(
+            NativeBarButton("Decrease", systemImage = "minus.circle", enabled = viewModel.count > 0, onClick = viewModel::decrement),
+            NativeBarButton("Increase", systemImage = "plus.circle", onClick = viewModel::increment),
+        ),
+    )
 
     Column(
         modifier = Modifier
@@ -123,13 +185,101 @@ fun DetailScreen(id: Int, navigation: AppNavigation) {
         Button(onClick = { navigation.open(DetailRoute(id)) }) { Text("Open same Detail") }
         Button(onClick = { navigation.replaceTop(DetailRoute(id + 100)) }) { Text("Replace with Detail ${id + 100}") }
         Button(onClick = navigation::popToRoot) { Text("Pop to root") }
+
+        // A back handler in the screen intercepts back (native back button and edge swipe on
+        // iOS, system back on Android) while it is enabled.
+        var guardBack by rememberSaveable { mutableStateOf(false) }
+        var intercepted by rememberSaveable { mutableIntStateOf(0) }
+        NavigationBackHandler(
+            state = rememberNavigationEventState(NavigationEventInfo.None),
+            isBackEnabled = guardBack,
+            onBackCompleted = { intercepted++ },
+        )
+        Button(onClick = { guardBack = !guardBack }) { Text(if (guardBack) "Guard back: on" else "Guard back: off") }
+        Text("Back intercepted: $intercepted")
+
+        // Vertical drags inside the pad go to Compose, not to the native page scroll.
+        var pad by rememberSaveable { mutableFloatStateOf(0f) }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(96.dp)
+                .background(Color(0xFFFFE0B2))
+                .nativeScrollExclusion()
+                .draggable(rememberDraggableState { delta -> pad += delta }, Orientation.Vertical),
+            contentAlignment = Alignment.Center,
+        ) { Text("Drag pad: ${pad.roundToInt()}") }
         repeat(30) { line -> Text("Line $line of detail $id") }
     }
 }
 
+/** Gallery: a LazyVerticalGrid or LazyVerticalStaggeredGrid connected to the native bar. */
+@Composable
+fun GalleryScreen(navigation: AppNavigation) {
+    LogComposition("Gallery")
+    var staggered by rememberSaveable { mutableStateOf(false) }
+    NativeBarItems(
+        trailing = listOf(
+            NativeBarButton(
+                title = if (staggered) "Grid" else "Staggered",
+                systemImage = if (staggered) "square.grid.3x3" else "rectangle.3.group",
+            ) { staggered = !staggered },
+        ),
+    )
+    val background = MaterialTheme.colorScheme.background
+    val modifier = Modifier.fillMaxSize().background(background)
+
+    if (staggered) {
+        val state = rememberLazyStaggeredGridState()
+        val nativeScroll = rememberNativeScroll(state, background)
+        LazyVerticalStaggeredGrid(
+            columns = StaggeredGridCells.Fixed(2),
+            state = state,
+            userScrollEnabled = nativeScroll.userScrollEnabled,
+            contentPadding = nativeScroll.contentPadding + PaddingValues(8.dp),
+            verticalItemSpacing = 8.dp,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = modifier,
+        ) {
+            items(60, key = { it }) { index ->
+                Tile("Tile $index", height = (80 + index * 37 % 120).dp) { navigation.open(DetailRoute(index)) }
+            }
+        }
+    } else {
+        val state = rememberLazyGridState()
+        val nativeScroll = rememberNativeScroll(state, background)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(3),
+            state = state,
+            userScrollEnabled = nativeScroll.userScrollEnabled,
+            contentPadding = nativeScroll.contentPadding + PaddingValues(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = modifier,
+        ) {
+            items(90, key = { it }) { index ->
+                Tile("Cell $index", height = 100.dp) { navigation.open(DetailRoute(index)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Tile(label: String, height: Dp, onClick: () -> Unit) {
+    val hue = label.hashCode().mod(360).toFloat()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(height)
+            .background(Color.hsv(hue, 0.25f, 0.95f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(label) }
+}
+
 /** Settings: does not scroll, so it only applies the native chrome padding. */
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(navigation: AppNavigation) {
     LogComposition("Settings")
     var taps by rememberSaveable { mutableIntStateOf(0) }
     Column(
@@ -142,6 +292,43 @@ fun SettingsScreen() {
     ) {
         Text("Settings taps: $taps")
         Button(onClick = { taps++ }) { Text("Tap settings") }
+        // Replaces the tabs with the sign-in stack (on iOS: the root tab bar controller is swapped).
+        Button(onClick = navigation::signOut) { Text("Sign out") }
+    }
+}
+
+/** Root of the signed-out flow: a plain stack without tabs. */
+@Composable
+fun SignInScreen(navigation: AppNavigation) {
+    LogComposition("SignIn")
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(nativeContentPadding())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("You are signed out.")
+        Button(onClick = navigation::signIn) { Text("Sign in") }
+        Button(onClick = { navigation.open(SignInHelpRoute) }) { Text("Sign-in help") }
+    }
+}
+
+/** Pushed inside the sign-in stack; signing in from here also switches to the tabs. */
+@Composable
+fun SignInHelpScreen(navigation: AppNavigation) {
+    LogComposition("SignInHelp")
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(nativeContentPadding())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Any account works in this example.")
+        Button(onClick = navigation::signIn) { Text("Sign in from help") }
     }
 }
 

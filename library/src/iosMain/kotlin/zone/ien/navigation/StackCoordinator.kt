@@ -51,6 +51,20 @@ internal class StackCoordinator(
         apply()
     }
 
+    /**
+     * The stack left the app's navigation (replaced root, or its tab was dropped): every screen's
+     * content leaves composition. UIKit callbacks that still arrive (e.g. the end of a transition
+     * that was running) no longer reach the app's back stack.
+     */
+    fun dispose() {
+        navigationController.delegate = null
+        val removed = screens
+        screens = emptyList()
+        target = emptyList()
+        onBack = {}
+        removed.forEach { it.markRemoved() }
+    }
+
     private fun apply() {
         if (target.isEmpty()) return // Navigation 3 back stacks must not be empty.
         if (navigationController.transitionCoordinator != null) return // re-applied in didShow

@@ -4,6 +4,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -37,7 +41,10 @@ import kotlin.math.abs
 @OptIn(ExperimentalForeignApi::class)
 internal class ScrollProxy : NativeScrollHost {
 
-    val scrollView: UIScrollView = ProxyScrollView().apply {
+    /** Areas (dp == pt, in the Compose view's coordinates) where the pan must not start. */
+    private val exclusions = mutableMapOf<Any, Rect>()
+
+    val scrollView: UIScrollView = ProxyScrollView(::allowsPanAt).apply {
         scrollEnabled = false
         delaysContentTouches = false
         canCancelContentTouches = true
@@ -105,8 +112,24 @@ internal class ScrollProxy : NativeScrollHost {
     private val viewportHeight: Double get() = scrollView.bounds.useContents { size.height }
     private val contentHeight: Double get() = scrollView.contentSize.useContents { height }
 
-    override fun attach(scrollBy: (Double) -> Double): NativeScrollAttachment {
+    override fun setExclusion(owner: Any, area: Rect?) {
+        if (area == null) exclusions.remove(owner) else exclusions[owner] = area
+    }
+
+    /** False when the pan started inside an area excluded with `Modifier.nativeScrollExclusion()`. */
+    private fun allowsPanAt(pan: UIPanGestureRecognizer): Boolean {
+        if (exclusions.isEmpty()) return true
+        val composeView = pinnedView ?: return true
+        // Where the touch started: current location minus the translation so far.
+        val (x, y) = pan.locationInView(composeView).useContents { x to y }
+        val (dx, dy) = pan.translationInView(composeView).useContents { x to y }
+        val start = Offset((x - dx).toFloat(), (y - dy).toFloat())
+        return exclusions.values.none { it.contains(start) }
+    }
+
+    override fun attach(background: Color, scrollBy: (Double) -> Double): NativeScrollAttachment {
         attachment?.detach()
+        scrollView.backgroundColor = background.toUIColor()
         val newAttachment = Attachment()
         attachment = newAttachment
         scrollContent = scrollBy
@@ -134,6 +157,7 @@ internal class ScrollProxy : NativeScrollHost {
             sync.reset()
             scrollView.scrollEnabled = false
             scrollView.alwaysBounceVertical = false
+            scrollView.backgroundColor = UIColor.systemBackgroundColor
             setNativeOffset(-insetTop)
             updateContentSize()
             pinToViewport()
@@ -204,13 +228,29 @@ internal class ScrollProxy : NativeScrollHost {
     }
 }
 
-/** Vertical-only: horizontal pans are left to Compose (pagers, carousels, sliders). */
+private fun Color.toUIColor(): UIColor {
+    if (this == Color.Unspecified) return UIColor.systemBackgroundColor
+    val srgb = convert(ColorSpaces.Srgb)
+    return UIColor(
+        red = srgb.red.toDouble(),
+        green = srgb.green.toDouble(),
+        blue = srgb.blue.toDouble(),
+        alpha = srgb.alpha.toDouble(),
+    )
+}
+
+/**
+ * Vertical-only: horizontal pans are left to Compose (pagers, carousels, sliders), and so are
+ * pans starting in areas excluded with `Modifier.nativeScrollExclusion()`.
+ */
 @OptIn(ExperimentalForeignApi::class)
-private class ProxyScrollView : UIScrollView(frame = CGRectZero.readValue()) {
+private class ProxyScrollView(
+    private val allowsPan: (UIPanGestureRecognizer) -> Boolean,
+) : UIScrollView(frame = CGRectZero.readValue()) {
     override fun gestureRecognizerShouldBegin(gestureRecognizer: UIGestureRecognizer): Boolean {
         if (gestureRecognizer == panGestureRecognizer && gestureRecognizer is UIPanGestureRecognizer) {
             val horizontal = gestureRecognizer.velocityInView(this).useContents { abs(x) > abs(y) }
-            if (horizontal) return false
+            if (horizontal || !allowsPan(gestureRecognizer)) return false
         }
         return super.gestureRecognizerShouldBegin(gestureRecognizer)
     }

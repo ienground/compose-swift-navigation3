@@ -54,7 +54,8 @@ kotlin {
             api(libs.compose.runtime)
             api(libs.compose.foundation)
             api(libs.navigation3.runtime)
-            implementation(libs.compose.ui)
+            // Color (rememberNativeScroll background) is part of the public API
+            api(libs.compose.ui)
         }
 
         iosMain.dependencies {
@@ -62,6 +63,8 @@ kotlin {
             implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.savedstate.compose)
+            // Back handlers of a screen's content (BackHandler / NavigationBackHandler)
+            implementation(libs.androidx.navigationevent.compose)
         }
 
         commonTest.dependencies {

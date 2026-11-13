@@ -3,11 +3,13 @@ package zone.ien.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.window.ComposeUIViewController
 import androidx.navigation3.runtime.NavEntry
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import platform.UIKit.NSDirectionalRectEdgeAll
 import platform.UIKit.UINavigationItemLargeTitleDisplayMode
 import platform.UIKit.UIViewController
@@ -24,8 +26,10 @@ import platform.UIKit.navigationItem
  * switches to its scrolled appearance and (iOS 26+) applies the scroll edge effect. Screens that
  * do not scroll apply [nativeContentPadding] instead.
  *
- * Configure the title and bar items on the returned controller's `navigationItem`.
- * Navigation 3 apps use [NativeNavigationViewController], which creates these per entry.
+ * Bar items declared with [NativeBarItems] inside [content] become this screen's native
+ * navigation bar items and toolbar. The title can also be set on the returned controller's
+ * `navigationItem`. Navigation 3 apps use [NativeNavigationViewController], which creates these
+ * per entry.
  */
 public fun ComposeScreenViewController(content: @Composable () -> Unit): UIViewController =
     ComposeScreenController(content)
@@ -36,11 +40,32 @@ internal class ComposeScreenController(
 ) : UIViewController(nibName = null, bundle = null) {
 
     private val proxy = ScrollProxy()
+    private val barState = NativeBarState()
+    val bar = NativeBarApplier(this)
+    private val backHandling = NativeBackHandling(this)
+    private val keyboardInset = KeyboardInset(proxy.scrollView)
 
     private val composeController = ComposeUIViewController {
-        CompositionLocalProvider(LocalNativeScrollHost provides proxy) {
+        CompositionLocalProvider(
+            LocalNativeScrollHost provides proxy,
+            LocalNativeBarState provides barState,
+        ) {
+            // Learn about back handlers in the content and deliver native back to them.
+            val dispatcherOwner = LocalNavigationEventDispatcherOwner.current
+            DisposableEffect(dispatcherOwner) {
+                val dispatcher = dispatcherOwner?.navigationEventDispatcher
+                dispatcher?.addInput(backHandling)
+                onDispose { dispatcher?.removeInput(backHandling) }
+            }
             content()
+            // Recorded after the content's effects, so NativeBarItems below registered first.
+            SideEffect { bar.onComposed() }
         }
+    }
+
+    init {
+        barState.listener = bar::apply
+        barState.searchListener = bar::applySearch
     }
 
     override fun loadView() {
@@ -61,8 +86,22 @@ internal class ComposeScreenController(
         proxy.updateInsets()
     }
 
+    override fun viewDidAppear(animated: Boolean) {
+        super.viewDidAppear(animated)
+        backHandling.updateEdgeSwipe()
+    }
+
+    override fun viewDidDisappear(animated: Boolean) {
+        super.viewDidDisappear(animated)
+        keyboardInset.stop()
+    }
+
     override fun viewWillAppear(animated: Boolean) {
         super.viewWillAppear(animated)
+        // The appearing screen decides whether the navigation controller's toolbar is shown
+        // (also when an interactive pop is cancelled and this screen appears again).
+        bar.updateToolbarVisibility(animated, onlyIfTop = false)
+        keyboardInset.start()
         onWillAppear()
     }
 }
@@ -100,7 +139,7 @@ internal class EntryScreen(entry: NavEntry<*>, leases: ContentLeases) {
 
     private fun applyChrome() {
         val entry = state.entry
-        controller.navigationItem.title = entry.nativeTitle
+        controller.bar.baseTitle = entry.nativeTitle
         controller.navigationItem.largeTitleDisplayMode = if (entry.nativeLargeTitle) {
             UINavigationItemLargeTitleDisplayMode.UINavigationItemLargeTitleDisplayModeAlways
         } else {

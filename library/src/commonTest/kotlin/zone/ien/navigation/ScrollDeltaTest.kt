@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 
 class ScrollDeltaTest {
 
-    private fun list(absolute: Float, vararg items: Pair<String, Int>) = LazyListSnapshot(
+    private fun list(absolute: Float, vararg items: Pair<String, Int>) = LazyLayoutSnapshot(
         absolutePx = absolute,
         exact = false,
         canScrollForward = true,

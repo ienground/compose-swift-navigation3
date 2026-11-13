@@ -8,6 +8,7 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
 import kotlinx.coroutines.delay
+import platform.Foundation.NSData
 import platform.Foundation.NSDate
 import platform.Foundation.NSLog
 import platform.Foundation.NSProcessInfo
@@ -18,37 +19,68 @@ import platform.UIKit.UIViewController
 import platform.UIKit.childViewControllers
 import platform.UIKit.navigationItem
 import zone.ien.navigation.NativeNavigationViewController
+import zone.ien.navigation.NativeStack
 import zone.ien.navigation.NativeTab
 import zone.ien.navigation.NativeTabs
+import zone.ien.navigation.saveNativeNavigationState
 
 /**
  * iOS entry point: the shared routes and screens in native UIKit tabs and navigation stacks.
  *
- * Launch argument `-traceNav` logs the Kotlin back stacks and the native stack to the system
- * log (used by UI tests).
+ * [restoredState] is what [saveNavigationState] returned before the app was terminated in the
+ * background (the Swift side keeps it in `@SceneStorage`).
+ *
+ * Launch arguments (UI tests): `-traceNav` logs the Kotlin back stacks and the native stack to
+ * the system log; `-freshStart` ignores [restoredState]; `-demoDeepLink` starts on
+ * Home > Detail 3 > Detail 7 when nothing is restored.
  */
-fun MainViewController(): UIViewController {
-    val trace = NSProcessInfo.processInfo.arguments.contains("-traceNav")
+fun MainViewController(restoredState: NSData?): UIViewController {
+    val arguments = NSProcessInfo.processInfo.arguments
+    val trace = arguments.contains("-traceNav")
     if (trace) appLog = ::demoLog
+    val restored = restoredState.takeUnless { arguments.contains("-freshStart") }
+    if (trace) demoLog("RESTORE ${if (restored != null) "${restored.length} bytes" else "none"}")
     lateinit var root: UIViewController
 
-    root = NativeNavigationViewController {
+    // Version 1: the sign-in flow added saved values to rememberAppNavigation(), so state saved
+    // by version 0 no longer lines up with the calls and is dropped.
+    root = NativeNavigationViewController(restored, stateVersion = 1) {
         val navigation = rememberAppNavigation()
         val entryProvider = remember(navigation) { appEntryProvider(navigation) }
 
-        NativeTabs(
-            tabs = listOf(
-                NativeTab("Home", "house", navigation.stacks[0]),
-                NativeTab("Settings", "gearshape", navigation.stacks[1]),
-            ),
-            selectedTab = navigation.selectedTab,
-            onTabSelected = { navigation.selectedTab = it },
-            entryDecorators = listOf(
-                rememberSaveableStateHolderNavEntryDecorator(),
-                rememberViewModelStoreNavEntryDecorator(),
-            ),
-            entryProvider = entryProvider,
-        )
+        // Signed in: native tabs. Signed out: a plain native stack. Switching swaps the root
+        // controller with a cross-dissolve; the decorators belong to each branch, so the state of
+        // the branch that leaves is cleared (as with NavDisplay).
+        if (navigation.signedIn) {
+            NativeTabs(
+                tabs = listOf(
+                    NativeTab("Home", "house", navigation.stacks[0]),
+                    NativeTab("Gallery", "square.grid.2x2", navigation.stacks[1]),
+                    NativeTab("Settings", "gearshape", navigation.stacks[2]),
+                ),
+                selectedTab = navigation.selectedTab,
+                onTabSelected = { navigation.selectedTab = it },
+                entryDecorators = listOf(
+                    rememberSaveableStateHolderNavEntryDecorator(),
+                    rememberViewModelStoreNavEntryDecorator(),
+                ),
+                entryProvider = entryProvider,
+            )
+        } else {
+            NativeStack(
+                backStack = navigation.signInStack,
+                entryDecorators = listOf(
+                    rememberSaveableStateHolderNavEntryDecorator(),
+                    rememberViewModelStoreNavEntryDecorator(),
+                ),
+                entryProvider = entryProvider,
+            )
+        }
+
+        if (restored == null && arguments.contains("-demoDeepLink")) {
+            // Demo/test hook: start with a multi-level stack (Home > Detail 3 > Detail 7).
+            LaunchedEffect(navigation) { navigation.deepLink(0, DetailRoute(3), DetailRoute(7)) }
+        }
 
         if (trace) {
             LaunchedEffect(navigation) {
@@ -68,15 +100,23 @@ fun MainViewController(): UIViewController {
     return root
 }
 
+/** Called by the Swift side when the scene goes to the background. */
+fun saveNavigationState(controller: UIViewController): NSData? =
+    saveNativeNavigationState(controller).also { appLog("SAVE ${it?.length ?: 0} bytes") }
+
 @OptIn(ExperimentalForeignApi::class)
 private fun describeNative(root: UIViewController): String {
-    val tabs = root.childViewControllers.firstOrNull() as? UITabBarController ?: return "no tabs"
-    val navigation = tabs.selectedViewController as? UINavigationController ?: return "no stack"
+    val child = root.childViewControllers.firstOrNull()
+    val tabs = child as? UITabBarController
+    val navigation = (tabs?.selectedViewController ?: child) as? UINavigationController ?: return "no stack"
     val titles = navigation.viewControllers.joinToString(",") {
         (it as UIViewController).navigationItem.title ?: "?"
     }
     val bar = navigation.navigationBar.frame.useContents { "${origin.y}+${size.height}" }
-    return "tab=${tabs.selectedIndex} stack=[$titles] bar=$bar tabBarHidden=${tabs.tabBar.hidden || tabs.tabBar.frame.useContents { origin.y } >= tabs.view.frame.useContents { size.height }}"
+    val tabBar = if (tabs == null) "none" else {
+        "tab=${tabs.selectedIndex} tabBarHidden=${tabs.tabBar.hidden || tabs.tabBar.frame.useContents { origin.y } >= tabs.view.frame.useContents { size.height }}"
+    }
+    return "stack=[$titles] bar=$bar toolbarHidden=${navigation.toolbarHidden} tabs=$tabBar"
 }
 
 private fun demoLog(message: String) {
