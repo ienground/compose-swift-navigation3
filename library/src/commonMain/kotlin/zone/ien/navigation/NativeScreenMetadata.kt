@@ -16,8 +16,9 @@ import androidx.navigation3.runtime.metadata
  * ```
  *
  * On iOS the native navigation controllers read it (navigation bar title, large title, tab bar
- * visibility). Elsewhere it is plain data the app can read with [nativeTitle] etc., e.g. for its
- * own Material 3 top app bar.
+ * visibility). Elsewhere it is plain data: [NativeStack] and [NativeTabs] hand it to the app's
+ * `otherPlatforms` UI ([NativeNavigationScope.title], [NativeNavigationScope.tabBarVisible]), and
+ * [nativeTitle] etc. read it from any entry.
  *
  * @param title navigation bar title.
  * @param largeTitle show the large title (collapsing with the scroll) instead of an inline title.

@@ -1,7 +1,8 @@
 package zone.ien.utils.example
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.MutableIntState
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -61,16 +62,20 @@ var appLog: (String) -> Unit = {}
  * The app's navigation state: one Navigation 3 back stack per tab, and a separate sign-in stack
  * shown instead of the tabs while signed out. Shared by every platform; Android/desktop render it
  * with NavDisplay, iOS with the native controllers.
+ *
+ * [selectedTab] and [signedIn] live directly in the saveable states they are given, so they are
+ * saved whoever reads them (no copying in a side effect, which only runs when the caller of
+ * [rememberAppNavigation] recomposes).
  */
 @Stable
 class AppNavigation(
     val stacks: List<NavBackStack<NavKey>>,
     val signInStack: NavBackStack<NavKey>,
-    initialTab: Int,
-    initialSignedIn: Boolean,
+    selectedTab: MutableIntState,
+    signedIn: MutableState<Boolean>,
 ) {
-    var selectedTab by mutableIntStateOf(initialTab)
-    var signedIn by mutableStateOf(initialSignedIn)
+    var selectedTab by selectedTab
+    var signedIn by signedIn
         private set
 
     val currentStack: NavBackStack<NavKey> get() = if (signedIn) stacks[selectedTab] else signInStack
@@ -133,15 +138,9 @@ fun rememberAppNavigation(): AppNavigation {
     val signIn = rememberNavBackStack(navigationConfiguration, SignInRoute)
     val selectedTab = rememberSaveable { mutableIntStateOf(0) }
     val signedIn = rememberSaveable { mutableStateOf(true) }
-    val navigation = remember(home, gallery, settings, signIn) {
-        AppNavigation(listOf(home, gallery, settings), signIn, selectedTab.intValue, signedIn.value)
+    return remember(home, gallery, settings, signIn, selectedTab, signedIn) {
+        AppNavigation(listOf(home, gallery, settings), signIn, selectedTab, signedIn)
     }
-    // Keep the saved values in sync with the state holder.
-    SideEffect {
-        selectedTab.intValue = navigation.selectedTab
-        signedIn.value = navigation.signedIn
-    }
-    return navigation
 }
 
 fun appEntryProvider(navigation: AppNavigation): (NavKey) -> NavEntry<NavKey> = entryProvider {

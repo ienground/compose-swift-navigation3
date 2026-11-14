@@ -117,6 +117,7 @@ private fun rememberNativeScroll(
                             delta = delta / density.toDouble(),
                             canScrollForward = current.canScrollForward,
                             contentScrolling = current.isScrollInProgress,
+                            remaining = current.remainingPx?.let { it / density.toDouble() },
                         ),
                     )
                 }

@@ -54,8 +54,17 @@ public class NativeBarContent internal constructor(
  * back button stays), [toolbar] is the `UINavigationController` bottom toolbar (shown while this
  * screen is on top, hidden otherwise), and [title] overrides the `nativeScreen` title.
  *
- * Elsewhere nothing is drawn by the library. An app can show them in its own chrome (e.g. a
- * Material 3 `TopAppBar`) by providing a [NativeBarState] with [ProvideNativeBarState].
+ * The items exist only once the screen's content has composed, which starts when a push is
+ * already under way, and later still when the call sits inside a subcomposition (e.g. the content
+ * of a `Scaffold`, which composes during the first layout). UIKit animates the bar with the title
+ * the screen has when the push starts, so a title that comes from here appears only after the
+ * transition. Declare titles that do not depend on the screen's state with `nativeScreen(title)`
+ * and use [title] for titles that change while the screen is shown.
+ *
+ * Elsewhere nothing is drawn by the library. Below [NativeStack] or [NativeTabs] they reach the
+ * app's `otherPlatforms` UI as [NativeNavigationScope.title], [NativeNavigationScope.trailing]
+ * etc., for its own chrome (e.g. a Material 3 `TopAppBar`). Without them, an app can collect them
+ * by providing a [NativeBarState] with [ProvideNativeBarState].
  */
 @Composable
 public fun NativeBarItems(
@@ -87,7 +96,8 @@ public class NativeSearch internal constructor(
  *
  * On iOS it is the screen's native search field (`UISearchController` in the `navigationItem`):
  * below the large title, hidden while scrolling down, with the system Cancel button. Elsewhere
- * nothing is drawn by the library; an app can show [NativeBarState.search] in its own chrome.
+ * nothing is drawn by the library; an app can show it in its own chrome
+ * ([NativeNavigationScope.search], or [NativeBarState.search]).
  */
 @Composable
 public fun NativeSearchBar(query: String, onQueryChange: (String) -> Unit, placeholder: String = "") {
@@ -104,6 +114,9 @@ public fun NativeSearchBar(query: String, onQueryChange: (String) -> Unit, place
  * Collects the [NativeBarItems] declared by the screens composed below it. The most recently
  * registered screen that is still composed wins, which is the top screen of a back stack also
  * while a transition composes two screens.
+ *
+ * [NativeStack] and [NativeTabs] provide one to their `otherPlatforms` UI; create one only to
+ * collect the declarations below a plain `NavDisplay`.
  */
 @Stable
 public class NativeBarState {

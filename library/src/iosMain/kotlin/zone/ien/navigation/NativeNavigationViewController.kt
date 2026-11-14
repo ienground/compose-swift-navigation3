@@ -5,15 +5,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshots.Snapshot
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.navigation3.runtime.NavEntry
-import androidx.navigation3.runtime.NavEntryDecorator
-import androidx.navigation3.runtime.rememberDecoratedNavEntries
-import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
@@ -49,14 +44,28 @@ import platform.darwin.dispatch_get_main_queue
  * stacks (e.g. `rememberNavBackStack`) and declares the navigation with one [NativeStack]
  * (a single `UINavigationController`) or [NativeTabs] (`UITabBarController` with one
  * `UINavigationController` per tab) at a time. Each entry becomes a native screen; its content is
- * the entry's composable, and its navigation bar comes from [nativeScreen] metadata.
+ * the entry's composable, and its navigation bar comes from [nativeScreen] metadata and
+ * [NativeBarItems].
  *
+ * [NativeStack] and [NativeTabs] are common code, so the app's root composable is usually the
+ * same one Android uses: there it calls their `otherPlatforms` UI (`NavDisplay` in the app's
+ * Material chrome), here it declares the native controllers and emits no UI.
  * ```
- * fun MainViewController() = NativeNavigationViewController {
+ * // commonMain
+ * @Composable
+ * fun App() {
  *     val backStack = rememberNavBackStack(config, Home)
- *     NativeStack(backStack, entryProvider = appEntryProvider(backStack))
+ *     NativeStack(backStack, entryProvider = appEntryProvider(backStack)) { AppChrome() }
  * }
+ *
+ * // iosMain                                         // Android: setContent { App() }
+ * fun MainViewController() = NativeNavigationViewController { App() }
  * ```
+ *
+ * **Theme**: every screen is its own composition, so composition locals provided around the
+ * navigation here (e.g. `MaterialTheme`) do not reach the screens. Apply them per entry with a
+ * `NavEntryDecorator` (`NavEntryDecorator { entry -> AppTheme { entry.Content() } }` in
+ * `entryDecorators`): it runs inside each screen on iOS and inside `NavDisplay` elsewhere.
  *
  * **Switching the root**: which [NativeStack] or [NativeTabs] is declared may change, e.g. from a
  * sign-in flow to the main tabs:
@@ -68,7 +77,8 @@ import platform.darwin.dispatch_get_main_queue
  * composition, as when a `NavDisplay` leaves composition. Tabs inside a pushed screen (nested tab
  * bars) are not supported.
  *
- * [content] must not emit UI itself.
+ * [content] must not emit UI itself: UI belongs in the screens (entries) and, for the other
+ * platforms, in the `otherPlatforms` block of [NativeStack] / [NativeTabs], which iOS never calls.
  *
  * **State restoration**: pass the data from [saveNativeNavigationState] back as [restoredState]
  * to restore the back stacks, the selected tab and every entry's `rememberSaveable` state (scroll
@@ -135,77 +145,38 @@ private fun ByteArray.toNSData(): NSData =
     if (isEmpty()) NSData() else usePinned { NSData.create(bytes = it.addressOf(0), length = size.toULong()) }
 
 /**
- * A single native navigation stack (`UINavigationController`) for [backStack].
- * Parameters mirror Navigation 3's `NavDisplay`.
- *
- * @param onBack called once per screen UIKit popped (back button, edge swipe, long-press menu).
- *   It must remove the last entry of [backStack], as `NavDisplay`'s `onBack` does.
+ * What [NativeStack] and [NativeTabs] (common code) do on iOS: hand their decorated entries to
+ * [root], which shows them with UIKit controllers. The app's `otherPlatforms` UI is not used.
  */
-@Composable
-public fun <T : Any> NativeStack(
-    backStack: List<T>,
-    onBack: () -> Unit = { (backStack as? MutableList<T>)?.removeLastOrNull() },
-    entryDecorators: List<NavEntryDecorator<T>> = listOf(rememberSaveableStateHolderNavEntryDecorator()),
-    entryProvider: (key: T) -> NavEntry<T>,
-) {
-    val root = requireRoot("NativeStack")
-    val declaration = rememberRootDeclaration(root)
-    val entries = rememberDecoratedNavEntries(backStack, entryDecorators, entryProvider)
-    val currentOnBack by rememberUpdatedState(onBack)
-    SideEffect { root.updateStack(declaration, entries) { currentOnBack() } }
-}
-
-/**
- * One tab of [NativeTabs].
- *
- * @param systemImage SF Symbol name of the tab bar icon.
- * @param onBack called once per screen UIKit popped in this tab. It must remove the last entry
- *   of [backStack].
- */
-public class NativeTab<T : Any>(
-    public val title: String,
-    public val systemImage: String,
-    public val backStack: List<T>,
-    public val onBack: () -> Unit = { (backStack as? MutableList<T>)?.removeLastOrNull() },
-)
-
-/**
- * Native tabs (`UITabBarController`), each with its own navigation stack. Every tab keeps its
- * back stack while another tab is selected. Re-tapping the selected tab pops it to its root
- * (native behavior), reported through that tab's `onBack`.
- */
-@Composable
-public fun <T : Any> NativeTabs(
-    tabs: List<NativeTab<T>>,
-    selectedTab: Int,
-    onTabSelected: (Int) -> Unit,
-    entryDecorators: List<NavEntryDecorator<T>> = listOf(rememberSaveableStateHolderNavEntryDecorator()),
-    entryProvider: (key: T) -> NavEntry<T>,
-) {
-    val root = requireRoot("NativeTabs")
-    val declaration = rememberRootDeclaration(root)
-    // One rememberDecoratedNavEntries per back stack, as Navigation 3 requires for multiple stacks.
-    val entriesPerTab = tabs.mapIndexed { index, tab ->
-        key(index) { rememberDecoratedNavEntries(tab.backStack, entryDecorators, entryProvider) }
+private class RootNavigationHost(private val root: NativeNavigationRootController) : NativeNavigationHost {
+    @Composable
+    override fun Stack(entries: List<NavEntry<*>>, onBack: () -> Unit) {
+        val declaration = rememberRootDeclaration(root)
+        val currentOnBack by rememberUpdatedState(onBack)
+        SideEffect { root.updateStack(declaration, entries) { currentOnBack() } }
     }
-    val currentOnTabSelected by rememberUpdatedState(onTabSelected)
-    SideEffect {
-        root.updateTabs(
-            declaration = declaration,
-            tabs = tabs.mapIndexed { index, tab ->
-                TabState(tab.title, tab.systemImage, entriesPerTab[index], tab.onBack)
-            },
-            selectedTab = selectedTab,
-            onTabSelected = { currentOnTabSelected(it) },
-        )
+
+    @Composable
+    override fun Tabs(
+        tabs: List<NativeTab<*>>,
+        entriesPerTab: List<List<NavEntry<*>>>,
+        selectedTab: Int,
+        onTabSelected: (Int) -> Unit,
+    ) {
+        val declaration = rememberRootDeclaration(root)
+        val currentOnTabSelected by rememberUpdatedState(onTabSelected)
+        SideEffect {
+            root.updateTabs(
+                declaration = declaration,
+                tabs = tabs.mapIndexed { index, tab ->
+                    TabState(tab.title, tab.systemImage, entriesPerTab[index], tab.onBack)
+                },
+                selectedTab = selectedTab,
+                onTabSelected = { currentOnTabSelected(it) },
+            )
+        }
     }
 }
-
-@Composable
-private fun requireRoot(name: String): NativeNavigationRootController =
-    checkNotNull(LocalNativeNavigationRoot.current) {
-        "$name must be called inside NativeNavigationViewController { ... }"
-    }
 
 /**
  * Identifies one [NativeStack] or [NativeTabs] call while it is in the host composition. The root
@@ -224,8 +195,6 @@ private fun rememberRootDeclaration(root: NativeNavigationRootController): Any {
     return declaration
 }
 
-private val LocalNativeNavigationRoot = staticCompositionLocalOf<NativeNavigationRootController?> { null }
-
 internal class TabState(
     val title: String,
     val systemImage: String,
@@ -240,8 +209,9 @@ internal class NativeNavigationRootController(
 ) : UIViewController(nibName = null, bundle = null) {
 
     private val leases = ContentLeases()
+    private val navigationHost = RootNavigationHost(this)
     private val hostContent: @Composable () -> Unit = {
-        CompositionLocalProvider(LocalNativeNavigationRoot provides this) { content() }
+        CompositionLocalProvider(LocalNativeNavigationHost provides navigationHost) { content() }
     }
     private val restoring = restoredState != null
     private var host = HostComposition(hostContent, restoredState)

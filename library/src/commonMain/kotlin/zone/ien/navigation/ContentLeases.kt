@@ -38,9 +38,14 @@ internal class ContentLeases {
         if (holders[contentKey] == owner) holders.remove(contentKey)
     }
 
-    /** The owner is gone for good (its screen was removed from the stack). */
+    /**
+     * The owner is gone for good (its screen was removed from the stack). Its lease ends, but it
+     * keeps holding the key until its content actually leaves composition ([release]): a removed
+     * screen that is no longer in the window is not recomposed and keeps its content until
+     * Compose Multiplatform disposes its scene. Another screen with the same key composes after
+     * that, never while the removed content is still registered with the `SaveableStateHolder`.
+     */
     fun forget(contentKey: Any, owner: Long) {
         if (leases[contentKey] == owner) leases.remove(contentKey)
-        release(contentKey, owner)
     }
 }

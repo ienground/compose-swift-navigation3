@@ -11,6 +11,12 @@ internal sealed interface ScrollSnapshot {
     val exact: Boolean
     val canScrollForward: Boolean
     val isScrollInProgress: Boolean
+
+    /**
+     * How far the content can still scroll forward, in px, when it is known: always for
+     * [ScrollState], and for lazy layouts once their last item is laid out. Null otherwise.
+     */
+    val remainingPx: Float?
 }
 
 /** Item key and main axis offset (px), used to measure exact movement between two layouts. */
@@ -23,12 +29,14 @@ internal data class LazyLayoutSnapshot(
     override val canScrollForward: Boolean,
     override val isScrollInProgress: Boolean,
     val visibleItems: List<VisibleItem>,
+    override val remainingPx: Float? = null,
 ) : ScrollSnapshot
 
 internal data class ScrollStateSnapshot(
     override val absolutePx: Float,
     override val canScrollForward: Boolean,
     override val isScrollInProgress: Boolean,
+    override val remainingPx: Float? = null,
 ) : ScrollSnapshot {
     override val exact: Boolean get() = true
 }
@@ -46,12 +54,19 @@ internal fun LazyListState.snapshot(): LazyLayoutSnapshot {
             (first.index * averageSize - first.offset) to false
         }
     }
+    val last = visible.lastOrNull()
     return LazyLayoutSnapshot(
         absolutePx = absolute,
         exact = exact,
         canScrollForward = canScrollForward,
         isScrollInProgress = isScrollInProgress,
         visibleItems = visible.map { VisibleItem(it.key, it.offset) },
+        remainingPx = when {
+            last == null -> 0f
+            last.index == info.totalItemsCount - 1 ->
+                remainingToEnd(last.offset + last.size, info.afterContentPadding, info.viewportEndOffset)
+            else -> null
+        },
     )
 }
 
@@ -76,6 +91,14 @@ internal fun LazyGridState.snapshot(): LazyLayoutSnapshot {
         canScrollForward = canScrollForward,
         isScrollInProgress = isScrollInProgress,
         visibleItems = visible.map { VisibleItem(it.key, it.offset.y) },
+        // The last row holds the last item, so it is laid out whole: its bottom is the content end.
+        remainingPx = when {
+            first == null -> 0f
+            visible.any { it.index == info.totalItemsCount - 1 } -> remainingToEnd(
+                visible.maxOf { it.offset.y + it.size.height }, info.afterContentPadding, info.viewportEndOffset,
+            )
+            else -> null
+        },
     )
 }
 
@@ -100,6 +123,15 @@ internal fun LazyStaggeredGridState.snapshot(): LazyLayoutSnapshot {
         canScrollForward = canScrollForward,
         isScrollInProgress = isScrollInProgress,
         visibleItems = visible.map { VisibleItem(it.key, it.offset.y) },
+        // Items go to the shortest lane, so no item starts below the last one: once the last
+        // item is laid out, every item is laid out or above the viewport.
+        remainingPx = when {
+            first == null -> 0f
+            visible.any { it.index == info.totalItemsCount - 1 } -> remainingToEnd(
+                visible.maxOf { it.offset.y + it.size.height }, info.afterContentPadding, info.viewportEndOffset,
+            )
+            else -> null
+        },
     )
 }
 
@@ -107,7 +139,17 @@ internal fun ScrollState.snapshot(): ScrollStateSnapshot = ScrollStateSnapshot(
     absolutePx = value.toFloat(),
     canScrollForward = canScrollForward,
     isScrollInProgress = isScrollInProgress,
+    // maxValue is Int.MAX_VALUE until the content is measured.
+    remainingPx = if (maxValue == Int.MAX_VALUE) null else (maxValue - value).coerceAtLeast(0).toFloat(),
 )
+
+/**
+ * Distance (px) a lazy layout can still scroll forward, given where its content ends
+ * ([contentEnd], relative to the start of the content area) and its layout info: at the end,
+ * the content end plus [afterContentPadding] meets [viewportEndOffset].
+ */
+internal fun remainingToEnd(contentEnd: Int, afterContentPadding: Int, viewportEndOffset: Int): Float =
+    (contentEnd + afterContentPadding - viewportEndOffset).coerceAtLeast(0).toFloat()
 
 /**
  * How far the content moved between two layouts, in px (positive = towards the end).

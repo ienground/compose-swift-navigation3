@@ -121,12 +121,15 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         if (navigation.toolbarHidden != hidden) navigation.setToolbarHidden(hidden, animated)
     }
 
+    /**
+     * Sets the declared title, else the base title. The navigation item is written only when the
+     * title changes: screens recompose often (e.g. every second for a running timer) and each
+     * recomposition re-declares the same title, also while the bar is in a push or pop transition.
+     */
     private fun applyTitle() {
-        val override = latest?.title
-        when {
-            override != null -> controller.navigationItem.title = override
-            hasBaseTitle -> controller.navigationItem.title = baseTitle
-        }
+        val title = latest?.title ?: if (hasBaseTitle) baseTitle else return
+        val item = controller.navigationItem
+        if (item.title != title) item.title = title
     }
 
     private fun toolbarItems(buttons: List<BarShape.ButtonShape>): List<UIBarButtonItem> {

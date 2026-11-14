@@ -1,10 +1,7 @@
 package zone.ien.utils.example
 
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
-import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
-import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
 import kotlinx.coroutines.delay
@@ -19,13 +16,10 @@ import platform.UIKit.UIViewController
 import platform.UIKit.childViewControllers
 import platform.UIKit.navigationItem
 import zone.ien.navigation.NativeNavigationViewController
-import zone.ien.navigation.NativeStack
-import zone.ien.navigation.NativeTab
-import zone.ien.navigation.NativeTabs
 import zone.ien.navigation.saveNativeNavigationState
 
 /**
- * iOS entry point: the shared routes and screens in native UIKit tabs and navigation stacks.
+ * iOS entry point: the shared [App] in native UIKit tabs and navigation stacks.
  *
  * [restoredState] is what [saveNavigationState] returned before the app was terminated in the
  * background (the Swift side keeps it in `@SceneStorage`).
@@ -42,40 +36,13 @@ fun MainViewController(restoredState: NSData?): UIViewController {
     if (trace) demoLog("RESTORE ${if (restored != null) "${restored.length} bytes" else "none"}")
     lateinit var root: UIViewController
 
-    // Version 1: the sign-in flow added saved values to rememberAppNavigation(), so state saved
-    // by version 0 no longer lines up with the calls and is dropped.
-    root = NativeNavigationViewController(restored, stateVersion = 1) {
+    // Version 1: the sign-in flow added saved values to rememberAppNavigation().
+    // Version 2: the navigation is declared inside the shared App(), so saved values sit at other
+    // call positions. State saved by an older version is dropped.
+    root = NativeNavigationViewController(restored, stateVersion = 2) {
+        // The same App() as Android: here it declares the native controllers and emits no UI.
         val navigation = rememberAppNavigation()
-        val entryProvider = remember(navigation) { appEntryProvider(navigation) }
-
-        // Signed in: native tabs. Signed out: a plain native stack. Switching swaps the root
-        // controller with a cross-dissolve; the decorators belong to each branch, so the state of
-        // the branch that leaves is cleared (as with NavDisplay).
-        if (navigation.signedIn) {
-            NativeTabs(
-                tabs = listOf(
-                    NativeTab("Home", "house", navigation.stacks[0]),
-                    NativeTab("Gallery", "square.grid.2x2", navigation.stacks[1]),
-                    NativeTab("Settings", "gearshape", navigation.stacks[2]),
-                ),
-                selectedTab = navigation.selectedTab,
-                onTabSelected = { navigation.selectedTab = it },
-                entryDecorators = listOf(
-                    rememberSaveableStateHolderNavEntryDecorator(),
-                    rememberViewModelStoreNavEntryDecorator(),
-                ),
-                entryProvider = entryProvider,
-            )
-        } else {
-            NativeStack(
-                backStack = navigation.signInStack,
-                entryDecorators = listOf(
-                    rememberSaveableStateHolderNavEntryDecorator(),
-                    rememberViewModelStoreNavEntryDecorator(),
-                ),
-                entryProvider = entryProvider,
-            )
-        }
+        App(navigation)
 
         if (restored == null && arguments.contains("-demoDeepLink")) {
             // Demo/test hook: start with a multi-level stack (Home > Detail 3 > Detail 7).

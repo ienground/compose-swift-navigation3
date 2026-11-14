@@ -93,8 +93,23 @@ internal class StackCoordinator(
             is StackUpdate.Replace -> navigationController.setViewControllers(next.map { it.controller }, animated)
             is StackUpdate.None -> Unit
         }
-        removed.forEach { it.markRemoved() }
+        retire(removed)
         updateBackActions()
+    }
+
+    /**
+     * Screens the app removed from the back stack. During an animated pop they are still on
+     * screen: their content stays until the transition ends (as NavDisplay keeps an exiting entry
+     * during its animation), then leaves composition.
+     */
+    private fun retire(removed: List<EntryScreen>) {
+        if (removed.isEmpty()) return
+        val coordinator = navigationController.transitionCoordinator
+        if (coordinator == null) {
+            removed.forEach { it.markRemoved() }
+        } else {
+            coordinator.animateAlongsideTransition(animation = null) { _ -> removed.forEach { it.markRemoved() } }
+        }
     }
 
     /** A screen may have become the root (or stopped being it): only non-root screens route the back button. */

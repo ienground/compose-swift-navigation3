@@ -5,7 +5,7 @@ iOS에서는 백스택을 **실제 UIKit 내비게이션 컨트롤러**로 보�
 사용하는 컴포넌트는 `UITabBarController`, `UINavigationController`, `UINavigationBar`, `UIToolbar`, `UISearchController`입니다.
 Android에서는 지금처럼 `NavDisplay`와 Material 3를 그대로 씁니다.
 
-라우트, 백스택, `entryProvider`, 화면, ViewModel은 모두 공통 코드에 둡니다.
+라우트, 백스택, `entryProvider`, 화면, ViewModel, 그리고 루트 `App()`까지 모두 공통 코드에 둡니다. 플랫폼마다 다른 것은 진입점 한 줄과 Android용 Material 화면 구성뿐입니다.
 
 iOS 사용자는 Compose로 흉내 낸 UI가 아니라 시스템 컴포넌트를 그대로 씁니다.
 
@@ -52,14 +52,20 @@ Maven Central에 배포되기 전까지는 두 가지 방법 중 하나를 씁�
 ## 전체 구조
 
 ```
-commonMain   라우트(NavKey) · 백스택 · entryProvider · 화면 · ViewModel
+commonMain   라우트(NavKey) · 백스택 · entryProvider · 화면 · ViewModel · App()
    │
-   ├── Android / Desktop: 앱의 NavDisplay + Material 3 화면 구성 (변경 없음)
-   │
-   └── iOS: NativeNavigationViewController { NativeTabs(...) 또는 NativeStack(...) }
-              └── UITabBarController → 탭마다 UINavigationController
-                    └── Navigation 3 엔트리 하나당 네이티브 화면 하나 (안에 Compose 콘텐츠)
+   └── App(): NativeTabs(...) 또는 NativeStack(...) { 다른 플랫폼 UI }
+         │
+         ├── Android / Desktop / Web: 블록 안의 앱 UI(Material 3 Scaffold + NavDisplay)를 그대로 그림
+         │
+         └── iOS: NativeNavigationViewController { App() }
+                    └── UITabBarController → 탭마다 UINavigationController
+                          └── Navigation 3 엔트리 하나당 네이티브 화면 하나 (안에 Compose 콘텐츠)
 ```
+
+`App()`은 모든 플랫폼이 함께 씁니다. 플랫폼마다 다른 것은 두 가지뿐입니다.
+- 진입점 한 줄: Android는 `setContent { App() }`, iOS는 `NativeNavigationViewController { App() }`
+- `NativeStack`/`NativeTabs`의 마지막 블록(`otherPlatforms`): iOS가 아닌 플랫폼에서만 실행되는 앱의 Material 화면 구성
 
 기준은 Kotlin 백스택입니다.
 - 백스택에 키를 추가, 제거, 교체하면 네이티브 스택이 push, pop, 전체 설정으로 따라갑니다.
@@ -68,8 +74,11 @@ commonMain   라우트(NavKey) · 백스택 · entryProvider · 화면 · ViewMo
 ## 기존 Navigation 3 앱에서 옮기기
 
 Compose Multiplatform과 Navigation 3(`NavDisplay`)로 이미 만든 앱을 기준으로 설명합니다.
-라우트, 백스택 조작, `entryProvider`, ViewModel, 뒤로가기 핸들러는 그대로 둡니다.
-바뀌는 것은 두 가지입니다. 탑바를 그리는 위치와 iOS 진입점입니다.
+라우트, 백스택 조작, `entryProvider`, ViewModel, 뒤로가기 핸들러, 루트 `App()`은 그대로 둡니다.
+바뀌는 것은 세 가지입니다.
+- 탑바에 들어갈 내용을 화면이 그리지 않고 선언합니다.
+- `NavDisplay`를 `NativeStack`(탭이 있으면 `NativeTabs`)으로 감쌉니다.
+- iOS 진입점이 `NativeNavigationViewController { App() }`가 됩니다.
 
 ### 한눈에 보기
 
@@ -84,32 +93,15 @@ Compose Multiplatform과 Navigation 3(`NavDisplay`)로 이미 만든 앱을 기�
 | 탑바의 검색 필드 | `NativeSearchBar(query, onQueryChange)` |
 | `Scaffold`의 `innerPadding` | 스크롤 화면은 `rememberNativeScroll(state).contentPadding`, 그 밖에는 `nativeContentPadding()` |
 | `BackHandler`, `NavigationBackHandler` | 그대로 |
-| Material `NavigationBar`(탭) | Android는 그대로. iOS는 `NativeTabs` |
-| iOS `ComposeUIViewController { App() }` | `NativeNavigationViewController { NativeStack(...) }` 또는 `NativeTabs(...)` |
+| `NavDisplay(backStack, onBack, entryDecorators, entryProvider)` | `NativeStack(backStack, onBack, entryDecorators, entryProvider) { Scaffold + NavDisplay(entries, onBack = onBack) }` |
+| 백스택 여러 개 + Material `NavigationBar`(탭) | `NativeTabs(tabs, selectedTab, onTabSelected, ...) { ... }`. Android의 `NavigationBar`는 블록 안에서 `tabs`로 그립니다 |
+| `App()`을 감싼 앱 테마 | 엔트리 decorator와 블록 안의 Scaffold에 적용합니다 |
+| iOS `ComposeUIViewController { App() }` | `NativeNavigationViewController { App() }` |
 | Swift의 `UIViewControllerRepresentable` | 그대로. `.ignoresSafeArea()`로 전체 화면을 쓰게 합니다 |
 
-### 1단계: `entryProvider`를 `App()` 밖으로 꺼냅니다
-
-iOS는 `App()`을 실행하지 않습니다. iOS 진입점이 백스택을 직접 만들고, Android와 같은 `entryProvider`를 씁니다.
+### 1단계: 엔트리에 화면 정보를 더합니다
 
 ```kotlin
-// 전: App() 안에 모두 있음
-@Composable
-fun App() {
-    val backStack = rememberNavBackStack(config, Home)
-    NavDisplay(
-        backStack = backStack,
-        onBack = { backStack.removeLastOrNull() },
-        entryProvider = entryProvider {
-            entry<Home> { HomeScreen(onOpen = { backStack.add(Detail(it)) }) }
-            entry<Detail> { key -> DetailScreen(key.id) }
-        },
-    )
-}
-```
-
-```kotlin
-// 후: commonMain. Android와 iOS가 함께 씁니다
 fun appEntryProvider(backStack: NavBackStack<NavKey>) = entryProvider<NavKey> {
     entry<Home>(metadata = nativeScreen(title = "Home", largeTitle = true)) {
         HomeScreen(onOpen = { backStack.add(Detail(it)) })
@@ -120,8 +112,9 @@ fun appEntryProvider(backStack: NavBackStack<NavKey>) = entryProvider<NavKey> {
 }
 ```
 
-- 탭이 여러 개이거나 이동 로직이 많으면 백스택들을 상태 홀더 하나에 모읍니다(예제의 `AppNavigation`과 `rememberAppNavigation()`).
+- 타이틀은 push 애니메이션이 시작되기 전에 정해져야 전환과 함께 보입니다. 그래서 화면 상태와 무관한 타이틀은 여기서 선언합니다.
 - 백스택은 `NavDisplay`를 쓸 때처럼 snapshot state 리스트여야 합니다(`rememberNavBackStack`, `mutableStateListOf`). 그래야 바뀐 것이 iOS에 반영됩니다.
+- 탭이 여러 개이거나 이동 로직이 많으면 백스택들을 상태 홀더 하나에 모읍니다(예제의 `AppNavigation`과 `rememberAppNavigation()`).
 
 ### 2단계: 화면에서 탑바를 빼고 선언으로 바꿉니다
 
@@ -165,63 +158,14 @@ fun DetailScreen(id: Int, viewModel: DetailViewModel = viewModel()) {
 - iOS 내비게이션 바와 탭 바의 높이는 이 여백에 이미 들어 있습니다. 화면에서 `WindowInsets`로 같은 여백을 또 주지 않습니다.
 - `LazyColumn`이 아닌 경우(그리드, `verticalScroll`), 바 버튼, 검색은 [3. 화면 작성](#3-화면-작성-공통)을 봅니다.
 
-### 3단계: Android는 탑바를 앱의 Scaffold로 올립니다
+### 3단계: `NavDisplay`를 `NativeStack`으로 감쌉니다
 
-`NavDisplay`는 그대로 둡니다. 화면이 선언한 내용은 `NativeBarState`로 받아 Material 3로 그립니다.
+`NavDisplay`와 Material Scaffold를 `NativeStack`의 마지막 블록(`otherPlatforms`)으로 옮깁니다.
+이 블록은 iOS가 아닌 플랫폼에서만 실행되고, 화면이 선언한 내용과 백스택 상태를 바로 읽을 수 있습니다(`NativeNavigationScope`).
 
 ```kotlin
 @Composable
 fun App() {
-    val backStack = rememberNavBackStack(config, Home)
-    val entryProvider = remember(backStack) { appEntryProvider(backStack) }
-    val bar = remember { NativeBarState() }
-
-    AppTheme {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text(bar.title ?: entryProvider(backStack.last()).nativeTitle.orEmpty()) },
-                    navigationIcon = {
-                        if (backStack.size > 1) {
-                            IconButton(onClick = { backStack.removeLastOrNull() }) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
-                            }
-                        }
-                    },
-                    actions = {
-                        bar.trailing.forEach { TextButton(onClick = it.onClick, enabled = it.enabled) { Text(it.title) } }
-                    },
-                )
-            },
-        ) { innerPadding ->
-            ProvideNativeBarState(bar) {
-                NavDisplay(
-                    backStack = backStack,
-                    modifier = Modifier.padding(innerPadding),
-                    onBack = { backStack.removeLastOrNull() },
-                    entryProvider = entryProvider,
-                )
-            }
-        }
-    }
-}
-```
-
-- 메뉴, 툴바, 검색은 `button.menu`, `bar.toolbar`, `bar.search`로 받습니다(예제 `App.kt`).
-- `systemImage`는 iOS용 SF Symbol 이름입니다. Android 아이콘은 앱이 정합니다.
-- 탑바가 화면마다 있지 않고 앱에 하나만 남습니다. 그래서 화면이 전환될 때 탑바는 제자리에 있고 내용만 바뀝니다.
-  - 탑바가 화면과 함께 움직이던 모양을 유지하려면, Android의 `NavDisplay`에만 넘기는 `NavEntryDecorator`로 엔트리마다 Scaffold와 `ProvideNativeBarState`를 감쌉니다. 예제에는 이 방식이 없습니다.
-
-### 4단계: iOS 진입점을 바꿉니다
-
-```kotlin
-// 전: iosMain
-fun MainViewController() = ComposeUIViewController { App() }
-```
-
-```kotlin
-// 후: iosMain
-fun MainViewController(): UIViewController = NativeNavigationViewController {
     val backStack = rememberNavBackStack(config, Home)
     NativeStack(
         backStack = backStack,
@@ -231,19 +175,56 @@ fun MainViewController(): UIViewController = NativeNavigationViewController {
             rememberViewModelStoreNavEntryDecorator(),
         ),
         entryProvider = remember(backStack) { appEntryProvider(backStack) },
-    )
+    ) {
+        // iOS가 아닌 플랫폼에서만 실행됩니다. 지금 쓰는 Material 3 구성을 그대로 둡니다.
+        AppTheme {
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text(title.orEmpty()) },
+                        navigationIcon = {
+                            if (canGoBack) {
+                                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                            }
+                        },
+                        actions = {
+                            trailing.forEach { TextButton(onClick = it.onClick, enabled = it.enabled) { Text(it.title) } }
+                        },
+                    )
+                },
+            ) { innerPadding ->
+                NavDisplay(entries = entries, modifier = Modifier.padding(innerPadding), onBack = onBack)
+            }
+        }
+    }
 }
 ```
 
 - `NativeStack`은 `NavDisplay`처럼 `backStack`, `onBack`, `entryDecorators`, `entryProvider`를 받습니다. `onBack`의 기본값은 마지막 엔트리를 지우는 것입니다.
-- 탭이 있으면 `NativeTabs`를 씁니다([5. iOS](#5-ios)).
-- content 블록은 UI가 없는 composition에서 실행됩니다. `Scaffold`나 `Text` 같은 UI를 넣으면 안 됩니다.
+- 블록의 `entries`는 decorator가 이미 적용된 엔트리입니다. `NavDisplay(entries = entries, onBack = onBack)`에 그대로 넘기고, decorator와 `entryProvider`를 다시 넘기지 않습니다.
+- `title`, `trailing` 같은 블록 안의 값은 [4. Android와 Desktop](#4-android와-desktop)에 정리했습니다. 탭이 있으면 `NativeTabs`를 씁니다([5. iOS](#5-ios)).
+- `NativeStack` 호출 바깥에는 UI를 두지 않습니다. iOS에서는 `App()` 전체가 UI 없는 composition에서 실행되기 때문입니다.
+- 탑바가 화면마다 있지 않고 앱에 하나만 남습니다. 그래서 화면이 전환될 때 탑바는 제자리에 있고 내용만 바뀝니다.
+
+### 4단계: iOS 진입점을 한 줄로 바꿉니다
+
+```kotlin
+// 전: iosMain
+fun MainViewController() = ComposeUIViewController { App() }
+```
+
+```kotlin
+// 후: iosMain
+fun MainViewController(): UIViewController = NativeNavigationViewController { App() }
+```
+
+- iOS에서 `NativeStack`과 `NativeTabs`는 네이티브 컨트롤러를 선언하고, 마지막 블록은 실행하지 않습니다. 그래서 `App()`은 iOS에서 아무것도 그리지 않습니다.
 - 함수 이름과 매개변수를 그대로 두면 Swift 코드는 바꿀 필요가 없습니다. SwiftUI에서 `.ignoresSafeArea(.keyboard)`만 쓰고 있었다면 `.ignoresSafeArea()`로 바꿉니다. 안전 영역은 내비게이션 바와 탭 바가 직접 처리합니다.
 
-### 테마와 앱 전역 CompositionLocal (iOS)
+### 테마와 앱 전역 CompositionLocal
 
 iOS에서는 엔트리마다 `UIViewController`와 composition이 따로 있습니다.
-그래서 content 블록을 `MaterialTheme`이나 DI용 `CompositionLocalProvider`로 감싸도 화면에는 전달되지 않습니다.
+그래서 `NativeStack`을 `MaterialTheme`이나 DI용 `CompositionLocalProvider`로 감싸도 iOS 화면에는 전달되지 않습니다.
 엔트리 decorator로 화면마다 넣어 줍니다.
 
 ```kotlin
@@ -253,7 +234,8 @@ fun rememberAppThemeDecorator(): NavEntryDecorator<NavKey> = remember {
 }
 ```
 
-Android에서는 `App()`이 이미 `AppTheme`으로 감싸고 있으므로 이 decorator가 필요 없습니다.
+- decorator는 iOS에서는 각 화면 안에서, Android에서는 `NavDisplay` 안에서 실행됩니다. 한 번 넣으면 두 플랫폼에 모두 적용됩니다.
+- Android의 탑바와 탭 바(블록 안의 Scaffold)는 엔트리 바깥이라서 블록 안에서도 `AppTheme`으로 감쌉니다(3단계 코드).
 
 내비게이션 바, 탭 바, 툴바는 시스템 바입니다. Compose 테마가 아니라 iOS의 라이트·다크 모드를 따릅니다.
 - 앱 테마가 `isSystemInDarkTheme()`을 따르면 화면과 바의 모드가 일치합니다.
@@ -261,8 +243,9 @@ Android에서는 `App()`이 이미 `AppTheme`으로 감싸고 있으므로 이 d
 
 ### iOS에서 쓰지 않는 것
 
-- `NavDisplay`의 전환 애니메이션 설정(`transitionSpec`, `popTransitionSpec`, `predictivePopTransitionSpec`). iOS는 UIKit 기본 전환을 씁니다.
-- `sceneStrategy`(`DialogSceneStrategy`, list-detail 등). 모든 엔트리는 push되는 전체 화면이 됩니다. 다이얼로그와 바텀시트는 엔트리로 두지 말고 화면 안에서 띄웁니다.
+- 마지막 블록 전체. 그 안의 `NavDisplay`와 설정(`transitionSpec` 등 전환 애니메이션, `sceneStrategy`)도 쓰지 않습니다.
+  - iOS는 UIKit 기본 전환을 씁니다.
+  - 모든 엔트리는 push되는 전체 화면이 됩니다. 다이얼로그와 바텀시트는 엔트리로 두지 말고 화면 안에서 띄웁니다.
 - Material `TopAppBar`와 `NavigationBar`. iOS에서는 시스템 바가 그 자리를 대신합니다.
 
 ### 옮긴 뒤 확인할 것
@@ -271,7 +254,7 @@ Android에서는 `App()`이 이미 `AppTheme`으로 감싸고 있으므로 이 d
 2. iOS: push, 뒤로 버튼, 가장자리 스와이프, 스크롤에 따라 접히는 큰 타이틀, 탭 전환을 확인합니다.
 3. iOS에서 앱 종료 후에도 화면을 되살리려면 [6. 상태 복원](#6-상태-복원-ios-선택)을 추가합니다.
    - 복원을 쓰면 `NativeNavigationViewController(restoredState, stateVersion = 1)`처럼 버전을 넘깁니다.
-   - 이후 content 블록의 `rememberNavBackStack`·`rememberSaveable` 호출을 더하거나 순서를 바꾸면 버전을 올립니다. 올리지 않으면 이전 저장 값이 엉뚱한 호출에 들어갑니다.
+   - 이후 `App()` 안의 `rememberNavBackStack`·`rememberSaveable` 호출을 더하거나 순서를 바꾸면 버전을 올립니다. 올리지 않으면 이전 저장 값이 엉뚱한 호출에 들어갑니다.
 
 ## 1. 라우트와 백스택 (공통)
 
@@ -327,13 +310,13 @@ val entryProvider = entryProvider<NavKey> {
 | `largeTitle` | 인라인 타이틀 대신 큰 타이틀(스크롤하면 접힘) |
 | `hidesTabBar` | 이 화면이 push되어 있는 동안 탭 바를 숨김(`hidesBottomBarWhenPushed`) |
 
-Android/Desktop에서는 같은 값을 `entry.nativeTitle`, `entry.nativeLargeTitle`, `entry.nativeHidesTabBar`로 읽어, 앱의 Material 화면 구성에 쓸 수 있습니다.
+Android/Desktop에서는 같은 값이 `NativeStack`/`NativeTabs` 블록의 `title`, `largeTitle`, `tabBarVisible`로 들어옵니다([4. Android와 Desktop](#4-android와-desktop)). 엔트리에서 직접 읽을 때는 `entry.nativeTitle`, `entry.nativeLargeTitle`, `entry.nativeHidesTabBar`를 씁니다.
 
 ## 3. 화면 작성 (공통)
 
 화면 안에 탑바(`TopAppBar`)를 직접 그리지 **않습니다**.
 - iOS에서는 탑바가 네이티브입니다.
-- Android에서는 앱의 Scaffold가 탑바를 그립니다.
+- Android에서는 `NativeStack`/`NativeTabs` 블록 안의 앱 Scaffold가 탑바를 그립니다.
 
 그래서 화면은 탑바에 들어갈 내용만 선언합니다.
 
@@ -384,6 +367,7 @@ LazyVerticalGrid(
 ```
 
 - iOS에서는 스크롤 제스처와 물리 동작을 UIKit이 처리하고, Compose 리스트가 따라갑니다. 다른 플랫폼에서는 아무 일도 하지 않습니다(`userScrollEnabled`는 `true`, 여백은 0).
+- 컨테이너의 사용자 스크롤은 반드시 `nativeScroll.userScrollEnabled`로 끕니다. 켜 두면 Compose가 드래그를 가져가서, 맨 위로 돌아와도 큰 타이틀이 다시 펼쳐지지 않습니다. 이 값을 받지 않는 컨테이너(스크롤을 내장한 서드파티 리스트 등)는 스크롤을 끌 수 있는 컨테이너로 직접 그립니다.
 - `background`는 끝을 넘어 당길 때(고무줄 효과) 드러나는 영역의 색입니다.
 - 화면당 컨테이너 하나만 연결합니다. `LazyListState`, `LazyGridState`, `LazyStaggeredGridState`, `ScrollState`를 지원합니다. 세로 방향만 연결합니다(`LazyRow`나 가로 그리드는 연결하지 않아도 그대로 동작합니다).
 - 세로로 직접 끄는 요소(세로 slider, 순서 바꾸기 핸들 등)에는 `Modifier.nativeScrollExclusion()`을 붙입니다. 그 안에서 시작한 드래그는 Compose가 받습니다.
@@ -421,6 +405,7 @@ iOS에서의 동작은 다음과 같습니다.
 - `toolbar`는 하단 툴바가 됩니다. 그 화면이 맨 위에 있을 때만 보입니다.
 - `systemImage`는 SF Symbol 이름이고, `title`은 접근성 레이블로 쓰입니다.
 - 네이티브 버튼은 모양이 바뀔 때만 새로 만들고, 다시 그릴(recomposition) 때마다 만들지는 않습니다.
+- 여기서 선언한 항목은 화면 내용이 처음 그려진 뒤에 등록됩니다. 그때는 push 애니메이션이 이미 시작된 뒤라서, `title`은 전환이 끝난 뒤에 나타납니다(내용이 `Scaffold` 안에 있으면 더 늦습니다). 화면 상태와 무관한 타이틀은 `nativeScreen(title)`로 선언해야 전환과 함께 보입니다.
 
 ### 검색
 
@@ -448,71 +433,108 @@ NavigationBackHandler(
 
 ## 4. Android와 Desktop
 
-바뀌는 것은 없습니다. 백스택은 `NavDisplay`와 앱의 Material 3 Scaffold로 보여줍니다.
-화면이 `NativeBarItems`와 `NativeSearchBar`로 선언한 내용을 보여주고 싶다면 `NativeBarState`로 받습니다.
+라이브러리는 Android UI를 그리지 않습니다.
+`NativeStack`과 `NativeTabs`는 마지막 블록(`otherPlatforms`)을 실행하고, 화면이 선언한 내용을 블록의 receiver(`NativeNavigationScope`)로 넘깁니다.
+앱은 이 값으로 자기 Material 3 컴포넌트를 그립니다.
+
+| 값 | 내용 | iOS에서 같은 역할 |
+| --- | --- | --- |
+| `entries` | 보이는 백스택(탭이면 선택된 탭)의 decorated 엔트리. `NavDisplay(entries, onBack = onBack)`에 넘깁니다 | 네이티브 스택 |
+| `onBack`, `canGoBack` | 보이는 백스택에서 하나 pop하기, 뒤로 갈 화면이 있는지 | 뒤로 버튼 |
+| `title`, `largeTitle` | 맨 위 화면의 타이틀(`NativeBarItems`의 타이틀, 없으면 `nativeScreen`의 타이틀)과 큰 타이틀 여부 | 내비게이션 바 타이틀 |
+| `leading`, `trailing`, `toolbar` | 맨 위 화면의 `NativeBarItems` | 바 버튼, 하단 툴바 |
+| `search` | 맨 위 화면의 `NativeSearchBar` | `UISearchController` |
+| `tabs`, `selectedTab`, `onTabSelected` | `NativeTabs`의 탭. `NativeStack`이면 빈 목록 | 탭 바 |
+| `tabBarVisible` | 탭이 있고, 선택된 탭에 push된 화면 중 `hidesTabBar`인 화면이 없으면 `true` | `hidesBottomBarWhenPushed` |
 
 ```kotlin
-val bar = remember { NativeBarState() }
-val top = entryProvider(backStack.last())
-
-Scaffold(
-    topBar = {
-        TopAppBar(
-            title = { Text(bar.title ?: top.nativeTitle.orEmpty()) },
-            actions = { bar.trailing.forEach { TextButton(onClick = it.onClick, enabled = it.enabled) { Text(it.title) } } },
-        )
-    },
-) { padding ->
-    Box(Modifier.padding(padding)) {
-        ProvideNativeBarState(bar) {
-            NavDisplay(backStack = backStack, onBack = { backStack.removeLastOrNull() }, entryProvider = entryProvider)
-        }
+// 예제 App.kt의 MaterialChrome()을 줄인 것
+@Composable
+fun NativeNavigationScope<NavKey>.MaterialChrome() = AppTheme {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title.orEmpty()) },
+                navigationIcon = { if (canGoBack) TextButton(onClick = onBack) { Text("Back") } },
+                actions = { trailing.forEach { BarButton(it) } },
+            )
+        },
+        bottomBar = {
+            if (tabBarVisible) NavigationBar {
+                tabs.forEachIndexed { index, tab ->
+                    NavigationBarItem(
+                        selected = index == selectedTab,
+                        onClick = { onTabSelected(index) },
+                        icon = { /* Android 아이콘 */ },
+                        label = { Text(tab.title) },
+                    )
+                }
+            }
+        },
+    ) { innerPadding ->
+        NavDisplay(entries = entries, modifier = Modifier.padding(innerPadding), onBack = onBack)
     }
 }
 ```
 
-`bar.toolbar`, `bar.leading`, `bar.search`도 있습니다. 라이브러리는 Android UI를 그리지 않으므로, 어떻게 보일지는 앱이 정합니다(예: `example/shared/.../App.kt`).
+- 같은 함수를 `NativeTabs`와 `NativeStack`의 블록에서 함께 쓸 수 있습니다(`NativeStack`이면 탭 바가 없습니다).
+- `NativeTabs`는 탭마다 엔트리를 따로 만듭니다(Navigation 3의 `rememberDecoratedNavEntries`). 그래서 Android에서도 탭을 바꿨다 돌아오면 각 탭의 `rememberSaveable` 상태와 ViewModel이 그대로 있습니다.
+- 바 아이템과 검색은 블록 아래(`NavDisplay`)에서 가장 최근에 그려진 화면의 것입니다. 전환 중에 두 화면이 함께 그려져도 맨 위 화면이 이깁니다.
+- `systemImage`는 iOS용 SF Symbol 이름입니다. Android 아이콘은 앱이 정합니다.
+- 메뉴(`button.menu`), 툴바, 검색까지 그린 전체 예는 `example/shared/.../App.kt`에 있습니다.
+- `NativeStack`/`NativeTabs` 없이 `NavDisplay`만 쓰는 화면에서 선언을 받고 싶다면 `NativeBarState`를 만들어 `ProvideNativeBarState(state) { NavDisplay(...) }`로 감쌉니다.
 
 ## 5. iOS
 
-`iosMain`에서 루트 뷰 컨트롤러를 만듭니다.
-content 블록에는 내비게이션 상태만 둡니다. UI 없는 composition에서 실행되므로 아무것도 그리면 안 됩니다.
+`iosMain`에서 루트 뷰 컨트롤러를 만들고, 그 안에서 공통 `App()`을 부릅니다.
 
 ```kotlin
 fun MainViewController(restoredState: NSData?): UIViewController =
-    NativeNavigationViewController(restoredState, stateVersion = 1) {
-        val home = rememberNavBackStack(navigationConfiguration, Home)
-        val settings = rememberNavBackStack(navigationConfiguration, Settings)
-        var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-
-        NativeTabs(
-            tabs = listOf(
-                NativeTab("Home", systemImage = "house", backStack = home),
-                NativeTab("Settings", systemImage = "gearshape", backStack = settings),
-            ),
-            selectedTab = selectedTab,
-            onTabSelected = { selectedTab = it },
-            entryDecorators = listOf(
-                rememberSaveableStateHolderNavEntryDecorator(),
-                rememberViewModelStoreNavEntryDecorator(),
-            ),
-            entryProvider = entryProvider,
-        )
-    }
+    NativeNavigationViewController(restoredState, stateVersion = 1) { App() }
 
 fun saveNavigationState(controller: UIViewController): NSData? = saveNativeNavigationState(controller)
 ```
 
-- 탭이 없으면 `NativeStack(backStack, entryProvider = entryProvider)`를 씁니다.
+- 블록은 UI 없는 composition에서 실행됩니다. 여기서 `NativeStack`과 `NativeTabs`는 네이티브 컨트롤러를 선언하고, 마지막 블록은 실행하지 않습니다.
+- 그래서 `App()`에서 `NativeStack`/`NativeTabs` 바깥에 UI(`Scaffold`, `Text` 등)를 두면 안 됩니다. 두면 예외가 납니다.
+- iOS에서 `NativeNavigationViewController` 밖에서 `NativeStack`이나 `NativeTabs`를 부르면 예외가 납니다. iOS에서 Compose로 대신 그리는 경로는 없습니다.
+
+탭이 있으면 공통 코드에서 `NativeTabs`로 선언합니다.
+
+```kotlin
+// commonMain
+@Composable
+fun App() {
+    val home = rememberNavBackStack(navigationConfiguration, Home)
+    val settings = rememberNavBackStack(navigationConfiguration, Settings)
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+
+    NativeTabs(
+        tabs = listOf(
+            NativeTab("Home", systemImage = "house", backStack = home),
+            NativeTab("Settings", systemImage = "gearshape", backStack = settings),
+        ),
+        selectedTab = selectedTab,
+        onTabSelected = { selectedTab = it },
+        entryDecorators = listOf(
+            rememberAppThemeDecorator(),
+            rememberSaveableStateHolderNavEntryDecorator(),
+            rememberViewModelStoreNavEntryDecorator(),
+        ),
+        entryProvider = entryProvider,
+    ) { MaterialChrome() }   // 4장. Android/Desktop만
+}
+```
+
+- iOS에서는 `UITabBarController`와 탭마다 `UINavigationController`가 됩니다. `systemImage`는 탭 바 아이콘(SF Symbol)입니다.
 - 한 번에 하나만 선언하되, 어느 것을 선언할지는 바꿀 수 있습니다. 로그인 흐름에서 메인 탭으로 넘어가는 경우가 대표적입니다.
 
   ```kotlin
-  if (signedIn) NativeTabs(tabs, ...) else NativeStack(signInBackStack, ...)
+  if (signedIn) NativeTabs(tabs, ...) { MaterialChrome() } else NativeStack(signInBackStack, ...) { MaterialChrome() }
   ```
 
-  윈도우의 루트 뷰 컨트롤러를 바꿀 때처럼 교차 페이드로 전환하고, 이전 계층의 화면은 모두 내립니다. `NavDisplay`가 composition을 떠날 때와 같은 의미입니다. decorator를 분기 안에서 만들면 떠나는 쪽의 ViewModel과 `rememberSaveable` 상태가 정리됩니다.
+  iOS는 윈도우의 루트 뷰 컨트롤러를 바꿀 때처럼 교차 페이드로 전환하고, 이전 계층의 화면은 모두 내립니다. `NavDisplay`가 composition을 떠날 때와 같은 의미입니다. decorator를 분기 안에서 만들면 떠나는 쪽의 ViewModel과 `rememberSaveable` 상태가 정리됩니다.
 - `NativeTab`과 `NativeStack`은 `NavDisplay`처럼 `onBack`을 받습니다. 기본값은 마지막 엔트리를 지우는 것이고, 직접 넘길 때도 엔트리 하나를 pop해야 합니다.
-- Android와 iOS가 내비게이션 로직을 공유하려면 백스택을 공통 상태 홀더에 둡니다(예제의 `rememberAppNavigation()`).
 
 Swift에서는 다른 Compose 뷰 컨트롤러처럼 붙입니다.
 
@@ -570,7 +592,7 @@ struct ContentView: View {
 ```
 
 - iOS 규칙을 그대로 따릅니다. 시스템이 종료했으면 복원하고, 사용자가 강제 종료했으면 버리며, 창(scene)마다 따로 저장합니다.
-- 앱 업데이트로 저장되는 라우트 구조나 `content` 안의 `rememberSaveable` 호출 구성(예: `rememberNavBackStack`을 하나 더 추가)이 바뀌면 `stateVersion`을 올립니다. 버전이 다른 저장 데이터는 디코딩하다 실패하지 않고 무시합니다.
+- 앱 업데이트로 저장되는 라우트 구조나 `App()` 안의 `rememberSaveable` 호출 구성(예: `rememberNavBackStack`을 하나 더 추가)이 바뀌면 `stateVersion`을 올립니다. 버전이 다른 저장 데이터는 디코딩하다 실패하지 않고 무시합니다.
   - `rememberSaveable` 값은 호출 위치로 짝지어집니다. 그래서 버전을 올리지 않으면 다른 호출이 이전 값을 받아 타입 오류가 날 수 있습니다.
   - 안전장치로, 복원 데이터 때문에 시작 composition이 실패하면 라이브러리가 데이터를 버리고 새로 시작합니다(로그를 남깁니다). 다만 타입이 우연히 맞아 엉뚱한 값으로 복원되는 경우는 막지 못합니다.
 - 저장할 수 없는 `rememberSaveable` 값(enum, 임의 객체 등)은 빼고 저장합니다. 복원 후에는 그 값만 초기값으로 시작합니다. ViewModel은 저장하지 않습니다.
@@ -607,7 +629,7 @@ home.addAll(listOf(Detail(3), Detail(7)))   // Home > Detail 3 > Detail 7
 
 ## 예제 앱
 
-`example/`은 위 기능을 모두 쓰는 탭 3개(Home, Gallery, Settings)짜리 앱입니다. Gallery 탭은 그리드와 staggered 그리드를 보여줍니다. Settings의 "Sign out"을 누르면 탭 대신 로그인 스택(`NativeStack`)으로 바뀌고, "Sign in"으로 다시 탭으로 돌아옵니다. 공통 코드는 `example/shared`에 있습니다.
+`example/`은 위 기능을 모두 쓰는 탭 3개(Home, Gallery, Settings)짜리 앱입니다. Gallery 탭은 그리드와 staggered 그리드를 보여줍니다. Settings의 "Sign out"을 누르면 탭 대신 로그인 스택(`NativeStack`)으로 바뀌고, "Sign in"으로 다시 탭으로 돌아옵니다. Android, Desktop, iOS가 `example/shared`의 `App()` 하나를 함께 씁니다.
 
 ```bash
 example/run-sample.sh            # iOS 시뮬레이터와 Android 에뮬레이터에 빌드·설치·실행
@@ -630,7 +652,7 @@ example/iosUITests/run.sh <시뮬레이터 UDID>                                
 .
 ├── library/              # 배포 대상 라이브러리 (zone.ien.navigation:compose-swift-navigation3)
 └── example/
-    ├── shared/           # 예제 앱: 공통 라우트와 화면, Android/Desktop UI, iOS 진입점
+    ├── shared/           # 예제 앱: 공통 App()과 화면, Android/Desktop용 Material 구성, iOS 진입점
     ├── androidApp/       # Android 진입점
     ├── desktopApp/       # Desktop(JVM) 진입점
     ├── iosApp/           # iOS 진입점 (Xcode 프로젝트, `Shared` 프레임워크를 import)

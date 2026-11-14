@@ -17,7 +17,8 @@ class ScrollSyncTest {
         exact: Boolean = false,
         canScrollForward: Boolean = true,
         contentScrolling: Boolean = false,
-    ) = ContentLayout(absolute, exact, delta, canScrollForward, contentScrolling)
+        remaining: Double? = null,
+    ) = ContentLayout(absolute, exact, delta, canScrollForward, contentScrolling, remaining)
 
     @Test
     fun restingNativeOffsetNeedsNoComposeScroll() {
@@ -116,6 +117,49 @@ class ScrollSyncTest {
         val sync = ScrollSync()
         assertEquals(9000.0, sync.contentHeight(viewport, top, bottom, currentHeight = 9000.0))
         assertEquals(viewport * 3, sync.contentHeight(viewport, top, bottom, currentHeight = 0.0))
+    }
+
+    @Test
+    fun knownEndSetsTheExactNativeEndBeforeComposeReachesIt() {
+        val sync = ScrollSync()
+        sync.onDispatched(sync.deltaForNativeOffset(-top + 900, top))
+        // The last item is laid out: 92 left. The native end is set now, while decelerating,
+        // so UIKit runs into it and bounces (instead of learning about it past the end).
+        sync.onContentLayout(layout(delta = 900.0, remaining = 92.0), nativeIdle = false, topInset = top)
+        val height = sync.contentHeight(viewport, top, bottom, currentHeight = 5000.0)
+        assertEquals(992.0 - top, ScrollSync.maxOffsetY(height, viewport, top, bottom))
+    }
+
+    @Test
+    fun smallMovementNearTheEndKeepsTheNativeEnd() {
+        // Before, Compose leaving its end by a few points (while bouncing) flipped canScrollForward
+        // and grew the native content again; the next layout shrank it and UIKit cut the bounce.
+        val sync = ScrollSync()
+        sync.onContentLayout(layout(delta = 992.0, canScrollForward = false, remaining = 0.0), nativeIdle = true, topInset = top)
+        val atEnd = sync.contentHeight(viewport, top, bottom, currentHeight = 5000.0)
+        sync.onContentLayout(layout(delta = -2.0, canScrollForward = true, remaining = 2.0), nativeIdle = false, topInset = top)
+        assertEquals(atEnd, sync.contentHeight(viewport, top, bottom, currentHeight = atEnd))
+    }
+
+    @Test
+    fun overscrollPastTheEndIsNotForwarded() {
+        val sync = ScrollSync()
+        sync.onContentLayout(layout(delta = 900.0, remaining = 40.0), nativeIdle = true, topInset = top)
+        // The native view is pulled 100 beyond Compose's end: only the 40 left reach Compose.
+        assertEquals(40.0, sync.deltaForNativeOffset(nativeOffsetY = 1040.0 - top, topInset = top))
+        sync.onDispatched(40.0)
+        sync.onContentLayout(layout(delta = 40.0, canScrollForward = false, remaining = 0.0), nativeIdle = false, topInset = top)
+        // Bouncing back towards the end moves the view, not the content.
+        assertEquals(0.0, sync.deltaForNativeOffset(nativeOffsetY = 1010.0 - top, topInset = top))
+        assertEquals(940.0, sync.contentOffset)
+    }
+
+    @Test
+    fun remainingToEndOfLazyLayout() {
+        // Last item ends at 1500 in a 700 tall content area with 80 after it: 880 left.
+        assertEquals(880f, remainingToEnd(contentEnd = 1500, afterContentPadding = 80, viewportEndOffset = 700))
+        // Content shorter than the viewport: nothing to scroll.
+        assertEquals(0f, remainingToEnd(contentEnd = 300, afterContentPadding = 80, viewportEndOffset = 700))
     }
 
     @Test

@@ -67,7 +67,8 @@ final class ScrollUITests: ExampleAppTestCase {
         log("PHASE L1 rotate to landscape")
         XCUIDevice.shared.orientation = .landscapeLeft; pause(2)
         expectText("Row 0", "L1")
-        tap("Row 2"); pause(1.5); expectText("Detail 2", "L2")
+        // Row 0: lower rows sit under the tab bar or below the edge in landscape.
+        tap("Row 0"); pause(1.5); expectText("Detail 0", "L2")
         tapBack(); pause(1.5); expectText("Row 0", "L3")
         log("PHASE L4 back to portrait")
         XCUIDevice.shared.orientation = .portrait; pause(2)
