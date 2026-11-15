@@ -18,6 +18,8 @@ import platform.UIKit.isAccessibilityElement
 import platform.UIKit.navigationController
 import platform.UIKit.navigationItem
 import platform.UIKit.setToolbarItems
+import kotlin.experimental.ExperimentalNativeApi
+import kotlin.native.ref.WeakReference
 
 /**
  * Applies a screen's [NativeBarContent] to its `navigationItem` and toolbar items.
@@ -26,6 +28,7 @@ import platform.UIKit.setToolbarItems
  * menus). Click handlers look up the latest content at tap time, so recompositions that only
  * create new lambdas do not touch UIKit (no flicker, open menus stay open).
  */
+@OptIn(ExperimentalNativeApi::class)
 internal class NativeBarApplier(private val controller: UIViewController) {
 
     private var searchController: UISearchController? = null
@@ -101,14 +104,15 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         appliedShape = shape
 
         val item = controller.navigationItem
+        val applier = WeakReference(this)
         item.leftItemsSupplementBackButton = true
         item.setLeftBarButtonItems(
-            shape.leading.mapIndexed { index, button -> barButton(button) { latest?.leading?.getOrNull(index) } },
+            shape.leading.mapIndexed { index, button -> barButton(button) { applier.get()?.latest?.leading?.getOrNull(index) } },
             animated = false,
         )
         // rightBarButtonItems are ordered from the right edge; the API takes them left to right.
         item.setRightBarButtonItems(
-            shape.trailing.mapIndexed { index, button -> barButton(button) { latest?.trailing?.getOrNull(index) } }
+            shape.trailing.mapIndexed { index, button -> barButton(button) { applier.get()?.latest?.trailing?.getOrNull(index) } }
                 .reversed(),
             animated = false,
         )
@@ -173,7 +177,8 @@ internal class NativeBarApplier(private val controller: UIViewController) {
     }
 
     private fun toolbarItems(buttons: List<BarShape.ButtonShape>): List<UIBarButtonItem> {
-        val items = buttons.mapIndexed { index, button -> barButton(button) { latest?.toolbar?.getOrNull(index) } }
+        val applier = WeakReference(this)
+        val items = buttons.mapIndexed { index, button -> barButton(button) { applier.get()?.latest?.toolbar?.getOrNull(index) } }
         return when (items.size) {
             0 -> emptyList()
             1 -> listOf(UIBarButtonItem.flexibleSpaceItem(), items.single(), UIBarButtonItem.flexibleSpaceItem())

@@ -18,7 +18,7 @@ import platform.darwin.NSObject
  * - UIKit → Kotlin: when UIKit itself pops (back button, edge swipe, back button long-press
  *   menu, tab re-tap), `didShow` reports it through `onBack()`, once per popped screen. A
  *   cancelled swipe never reaches `didShow` with a pop, so it changes nothing.
- * - Updates that arrive during a transition are applied when it finishes (`didShow`).
+ * - 전환 중 새 백스택이 들어오면 이전 네이티브 pop보다 우선하고, `didShow`에서 적용한다.
  *
  * In a tab, the stack shows the tab's own entries followed by [NativeTabs]' shared screens when
  * the tab is selected. Shared screens always hide the tab bar, and UIKit pops of them are
@@ -28,6 +28,7 @@ internal class StackCoordinator(
     val navigationController: UINavigationController,
     private val leases: ContentLeases,
     private val titleImages: TitleImages = TitleImages(),
+    private val isTransitioning: () -> Boolean = { navigationController.transitionCoordinator != null },
 ) {
     private var screens: List<EntryScreen> = emptyList()
     private var target: List<NavEntry<*>> = emptyList()
@@ -92,7 +93,7 @@ internal class StackCoordinator(
 
     private fun apply() {
         if (target.isEmpty()) return // Navigation 3 back stacks must not be empty.
-        if (navigationController.transitionCoordinator != null) return // re-applied in didShow
+        if (isTransitioning()) return // re-applied in didShow
 
         val update = stackUpdate(screens.map { it.contentKey }, target.map { it.contentKey })
         for (index in 0 until update.keep) {
@@ -151,17 +152,17 @@ internal class StackCoordinator(
         val remaining = screens.takeWhile { screen -> shown.any { it === screen.controller } }
         val popped = screens.size - remaining.size
         if (popped > 0) {
-            // UIKit popped by itself: mirror it in Kotlin. Drop the popped entries from the
-            // target too, so the re-apply below does not push them back before the host
-            // composition has seen the new back stack.
+            val hasPendingNavigation = target.map { it.contentKey } != screens.map { it.contentKey } ||
+                screens.indices.any { screens[it].shared != (it >= sharedFrom) }
             val removed = screens.drop(remaining.size)
             screens = remaining
-            target = target.take(remaining.size)
-            sharedFrom = minOf(sharedFrom, remaining.size)
             removed.forEach { it.markRemoved() }
-            // Top first: the shared screens sit above the tab's own ones.
-            removed.asReversed().forEach { screen -> if (screen.shared) onSharedBack() else onBack() }
-            Snapshot.sendApplyNotifications()
+            if (!hasPendingNavigation) {
+                target = target.take(remaining.size)
+                sharedFrom = minOf(sharedFrom, remaining.size)
+                removed.asReversed().forEach { screen -> if (screen.shared) onSharedBack() else onBack() }
+                Snapshot.sendApplyNotifications()
+            }
             updateBackActions()
         }
         // Apply what arrived during the transition (or re-push if the app refused the pop).

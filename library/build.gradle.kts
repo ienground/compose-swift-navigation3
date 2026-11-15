@@ -32,7 +32,11 @@ kotlin {
     }
 
     iosArm64()
-    iosSimulatorArm64()
+    iosSimulatorArm64 {
+        binaries.withType<org.jetbrains.kotlin.gradle.plugin.mpp.TestExecutable> {
+            linkerOpts("-sectcreate", "__TEXT", "__info_plist", file("src/iosTest/Info.plist").absolutePath)
+        }
+    }
 
     // `js` and `wasmJs` share the `webMain` / `webTest` source sets.
     // Browser only: Compose UI's Skiko runtime cannot load in Node.js.

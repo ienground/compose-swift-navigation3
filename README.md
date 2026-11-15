@@ -39,7 +39,7 @@ Routes, back stacks, entry providers, screens, ViewModels, and the root `App()` 
 - Root switching between `NativeStack` and `NativeTabs`, such as sign-in and main flows.
 - System Liquid Glass on iOS 26+ when built with iOS 26 SDK or later, unless the app opts out with `UIDesignRequiresCompatibility`. Earlier supported iOS versions use their native system appearance.
 
-Kotlin owns the back stack. Native pops call the app's back callback once per removed entry; cancelled gestures leave the Kotlin stack unchanged.
+Kotlin owns the back stack. Native pops call the app's back callback once per removed entry; cancelled gestures leave the Kotlin stack unchanged. A new Kotlin back stack received during a transition takes precedence; the earlier native pop is not applied again to that new stack.
 
 <a id="설치"></a>
 <a id="installation"></a>

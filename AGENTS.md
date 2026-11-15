@@ -452,7 +452,7 @@ iOS에서는 탑바 전체가 시스템 `UINavigationBar`다. Compose는 바 아
   - 첫 적용은 애니메이션 없이 한다.
 - **UIKit → Kotlin**: 뒤로 버튼, 가장자리 스와이프, 뒤로 버튼 길게 누르기 메뉴, 탭 재탭으로 UIKit이 pop하면 `didShow`에서 사라진 화면 수만큼 `onBack()`을 호출한다.
   - 인터랙티브 pop 중에는 UIKit의 `viewControllers`가 잠시 줄어들지만, `didShow` 전에는 반영하지 않는다. 취소된 스와이프가 상태를 바꾸지 않는 이유다(실측으로 확인).
-- **전환 중 요청**: `transitionCoordinator`가 있으면 적용을 미루고, `didShow`에서 최신 목표를 적용한다.
+- **전환 중 요청**: `transitionCoordinator`가 있으면 적용을 미루고, `didShow`에서 최신 목표를 적용한다. 전환 중 목표의 content key 목록이나 공유 화면 경계가 바뀌면 새 Kotlin 백스택을 우선하고, 이전 네이티브 pop의 콜백으로 새 스택을 다시 줄이지 않는다. 메타데이터만 바뀐 경우에는 네이티브 pop을 그대로 반영한다.
 - **탭**: `UITabBarControllerDelegate`의 선택은 `onTabSelected`로, Kotlin의 `selectedTab`은 `selectedIndex`로 반영한다. 둘 다 멱등이다.
 
 **탭 위의 공유 화면** (`NativeTabs(sharedBackStack, onSharedBack)`)
@@ -577,7 +577,7 @@ NativeBarItems(
 - **툴바**
   - `toolbar`는 화면의 `toolbarItems`가 된다. 버튼 사이에는 flexible space를 넣는다.
   - 툴바는 navigation controller 하나에 하나뿐이다. 그래서 나타나는 화면(`viewWillAppear`)이 자기 항목 유무에 따라 보이거나 숨긴다. 스와이프를 취소해 원래 화면이 다시 나타날 때도 같다.
-- **재생성 최소화**: 버튼 모양(`BarShape`: 제목, 아이콘, 활성 여부, 메뉴 구성)이 같으면 UIKit 아이템을 새로 만들지 않는다. 클릭할 때 최신 선언의 람다를 찾아 호출하므로, 다시 그릴 때마다 람다가 새로 생겨도 깜빡임이 없고 열린 메뉴도 닫히지 않는다.
+- **재생성 최소화**: 버튼 모양(`BarShape`: 제목, 아이콘, 활성 여부, 메뉴 구성)이 같으면 UIKit 아이템을 새로 만들지 않는다. 클릭할 때 최신 선언의 람다를 찾아 호출하므로, 다시 그릴 때마다 람다가 새로 생겨도 깜빡임이 없고 열린 메뉴도 닫히지 않는다. 버튼·메뉴·툴바의 액션은 `NativeBarApplier`를 약하게 참조해 화면 컨트롤러로 돌아가는 강한 참조 순환을 만들지 않는다.
 - **적용 시점**: 선언은 `NativeBarState`에 등록되고, 화면 호스트가 리스너로 같은 프레임에 바로 반영한다.
 - **제목**: 선언한 제목이 있으면 그것을, 없으면 metadata 제목을 쓴다. 값이 바뀔 때만 `navigationItem.title`에 쓴다. 화면은 자주 다시 그려지고(예: 1초마다 바뀌는 타이머) 그때마다 같은 제목을 다시 선언하기 때문이다.
 - **제목의 적용 시점**: `NativeBarItems`의 제목은 화면 내용이 composition된 뒤에 등록된다. 그때는 push가 이미 시작된 뒤다(6.6장 CMP 동작).

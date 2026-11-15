@@ -39,7 +39,7 @@ iOS에서는 Kotlin 백스택을 실제 `UITabBarController`와 `UINavigationCon
 - 로그인·메인 흐름처럼 `NativeStack`과 `NativeTabs` 사이 루트 전환
 - iOS 26 SDK 이상으로 빌드하면 iOS 26 이상에서 시스템 Liquid Glass 적용. 앱이 `UIDesignRequiresCompatibility`로 끄면 예외이며, 이전 지원 버전은 해당 시스템 디자인 사용
 
-백스택의 주인은 Kotlin입니다. 네이티브 pop은 제거된 엔트리마다 앱의 뒤로가기 콜백을 한 번 호출하고, 취소된 제스처는 Kotlin 스택을 바꾸지 않습니다.
+백스택의 주인은 Kotlin입니다. 네이티브 pop은 제거된 엔트리마다 앱의 뒤로가기 콜백을 한 번 호출하고, 취소된 제스처는 Kotlin 스택을 바꾸지 않습니다. 전환 중 새 Kotlin 백스택이 전달되면 이를 우선하며, 이전 네이티브 pop을 새 스택에 다시 반영하지 않습니다.
 
 <a id="설치"></a>
 <a id="installation"></a>
