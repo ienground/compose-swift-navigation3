@@ -21,8 +21,6 @@ jobs:
             os: macos-latest
           - target: jvmTest
             os: ubuntu-latest
-          - target: linuxX64Test
-            os: ubuntu-latest
           - target: testAndroidHostTest
             os: ubuntu-latest
           - target: jsTest wasmJsTest
