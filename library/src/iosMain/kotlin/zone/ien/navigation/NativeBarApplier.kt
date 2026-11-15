@@ -2,14 +2,19 @@ package zone.ien.navigation
 
 import platform.UIKit.UIAction
 import platform.UIKit.UIBarButtonItem
+import platform.UIKit.UIAccessibilityTraitHeader
 import platform.UIKit.UIImage
+import platform.UIKit.UIImageView
 import platform.UIKit.UIMenu
 import platform.UIKit.UIMenuElementAttributesDestructive
 import platform.UIKit.UISearchController
 import platform.UIKit.UISearchResultsUpdatingProtocol
 import platform.darwin.NSObject
+import platform.UIKit.UIViewContentMode
 import platform.UIKit.UIViewController
 import platform.UIKit.accessibilityLabel
+import platform.UIKit.accessibilityTraits
+import platform.UIKit.isAccessibilityElement
 import platform.UIKit.navigationController
 import platform.UIKit.navigationItem
 import platform.UIKit.setToolbarItems
@@ -75,6 +80,18 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         }
     private var hasBaseTitle = false
 
+    /**
+     * The entry's `nativeScreen` title image, shown as the navigation item's `titleView` in place
+     * of the title text. VoiceOver reads the title.
+     */
+    var titleImage: UIImage? = null
+        set(value) {
+            if (field === value) return
+            field = value
+            applyTitleImage()
+        }
+    private var titleImageView: UIImageView? = null
+
     fun apply(content: NativeBarContent?) {
         latest = content
         applyTitle()
@@ -130,6 +147,29 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         val title = latest?.title ?: if (hasBaseTitle) baseTitle else return
         val item = controller.navigationItem
         if (item.title != title) item.title = title
+        titleImageView?.accessibilityLabel = title
+    }
+
+    private fun applyTitleImage() {
+        val item = controller.navigationItem
+        val image = titleImage
+        if (image == null) {
+            if (titleImageView != null) {
+                item.titleView = null
+                titleImageView = null
+            }
+            return
+        }
+        val view = titleImageView ?: UIImageView().also {
+            it.contentMode = UIViewContentMode.UIViewContentModeScaleAspectFit
+            it.isAccessibilityElement = true
+            it.accessibilityTraits = UIAccessibilityTraitHeader
+            titleImageView = it
+            item.titleView = it
+        }
+        view.image = image
+        view.accessibilityLabel = item.title
+        view.sizeToFit()
     }
 
     private fun toolbarItems(buttons: List<BarShape.ButtonShape>): List<UIBarButtonItem> {

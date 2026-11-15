@@ -38,8 +38,9 @@ fun MainViewController(restoredState: NSData?): UIViewController {
 
     // Version 1: the sign-in flow added saved values to rememberAppNavigation().
     // Version 2: the navigation is declared inside the shared App(), so saved values sit at other
-    // call positions. State saved by an older version is dropped.
-    root = NativeNavigationViewController(restored, stateVersion = 2) {
+    // call positions. Version 3: App() wraps it in NativeNavigationFrame. Version 4: the shared
+    // back stack (Profile). State saved by an older version is dropped.
+    root = NativeNavigationViewController(restored, stateVersion = 4) {
         // The same App() as Android: here it declares the native controllers and emits no UI.
         val navigation = rememberAppNavigation()
         App(navigation)

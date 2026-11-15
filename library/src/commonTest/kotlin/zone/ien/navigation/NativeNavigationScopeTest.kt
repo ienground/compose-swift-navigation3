@@ -1,10 +1,15 @@
 package zone.ien.navigation
 
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.ColorPainter
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.navigation3.runtime.NavEntry
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class NativeNavigationScopeTest {
@@ -16,9 +21,21 @@ class NativeNavigationScopeTest {
         entries: List<NavEntry<String>>,
         tabs: List<NativeTab<String>> = emptyList(),
         bar: NativeBarState = NativeBarState(),
-    ) = OtherPlatformScope(entries, onBack = {}, tabs = tabs, selectedTab = 0, onTabSelected = {}, bar = bar)
+        shared: List<NavEntry<String>> = emptyList(),
+    ) = OtherPlatformScope(
+        tabEntries = entries,
+        sharedEntries = shared,
+        onBack = {},
+        tabs = tabs,
+        selectedTab = 0,
+        onTabSelected = {},
+        bar = bar,
+    )
 
     private val tabs = listOf(NativeTab("Home", "house", listOf("home")))
+
+    /** The key the entry was made for (the default content key is the key plus its class). */
+    private val NavEntry<String>.name: String get() = contentKey.toString().substringBefore(':')
 
     @Test
     fun titleComesFromTheTopEntryMetadata() {
@@ -34,6 +51,14 @@ class NativeNavigationScopeTest {
         assertEquals("Detail (2)", scope.title)
         bar.register("detail", NativeBarContent(null, emptyList(), emptyList(), emptyList()))
         assertEquals("Detail", scope.title)
+    }
+
+    @Test
+    fun titleImageComesFromTheTopEntryMetadata() {
+        val logo: @Composable () -> Painter = { ColorPainter(Color.Red) }
+        val home = NavEntry("home", metadata = nativeScreen(title = "Home", titleImage = logo)) {}
+        assertSame(logo, scope(listOf(home)).titleImage)
+        assertNull(scope(listOf(home, entry("detail", "Detail"))).titleImage)
     }
 
     @Test
@@ -75,5 +100,27 @@ class NativeNavigationScopeTest {
         val add = NativeBarButton("Add")
         bar.register("home", NativeBarContent(null, emptyList(), listOf(add), emptyList()))
         assertEquals(listOf(add), scope.trailing)
+    }
+
+    @Test
+    fun sharedScreensFollowTheSelectedTab() {
+        val scope = scope(listOf(entry("home"), entry("detail")), tabs, shared = listOf(entry("profile", "Profile")))
+        assertEquals(listOf("home", "detail", "profile"), scope.entries.map { it.name })
+        assertEquals(listOf("home", "detail"), scope.tabEntries.map { it.name })
+        assertEquals(listOf("profile"), scope.sharedEntries.map { it.name })
+        assertEquals("Profile", scope.title)
+        assertTrue(scope.canGoBack)
+    }
+
+    @Test
+    fun sharedScreensHideTheTabBar() {
+        // Whatever their metadata says: the user cannot switch tabs while a shared screen is shown.
+        assertFalse(scope(listOf(entry("home")), tabs, shared = listOf(entry("profile"))).tabBarVisible)
+        assertTrue(scope(listOf(entry("home")), tabs, shared = emptyList()).tabBarVisible)
+    }
+
+    @Test
+    fun aSharedScreenAboveATabRootCanGoBack() {
+        assertTrue(scope(listOf(entry("home")), tabs, shared = listOf(entry("profile"))).canGoBack)
     }
 }

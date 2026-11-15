@@ -48,6 +48,7 @@ internal class ComposeScreenController(
 
     private val composeController = ComposeUIViewController {
         CompositionLocalProvider(
+            LocalNativeScreenProvidable provides true,
             LocalNativeScrollHost provides proxy,
             LocalNativeBarState provides barState,
             // Back handlers of the content register with this screen's dispatcher, which routes
@@ -107,7 +108,11 @@ internal class ComposeScreenController(
  * (saveable state, ViewModel store) and its pop clean-up keep Navigation 3 semantics: the entry's
  * content leaves composition when the screen is removed, and Navigation 3 then runs `onPop`.
  */
-internal class EntryScreen(entry: NavEntry<*>, leases: ContentLeases) {
+internal class EntryScreen(
+    entry: NavEntry<*>,
+    leases: ContentLeases,
+    private val titleImages: TitleImages = TitleImages(),
+) {
 
     private val state = EntryScreenState(entry, leases)
 
@@ -119,6 +124,14 @@ internal class EntryScreen(entry: NavEntry<*>, leases: ContentLeases) {
         get() = state.entry
         set(value) {
             state.entry = value
+            applyChrome()
+        }
+
+    /** One of [NativeTabs]' shared screens: it hides the tab bar whatever its metadata says. */
+    var shared: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
             applyChrome()
         }
 
@@ -134,13 +147,14 @@ internal class EntryScreen(entry: NavEntry<*>, leases: ContentLeases) {
     private fun applyChrome() {
         val entry = state.entry
         controller.bar.baseTitle = entry.nativeTitle
+        controller.bar.titleImage = titleImages[state.contentKey]
         controller.navigationItem.largeTitleDisplayMode = if (entry.nativeLargeTitle) {
             UINavigationItemLargeTitleDisplayMode.UINavigationItemLargeTitleDisplayModeAlways
         } else {
             UINavigationItemLargeTitleDisplayMode.UINavigationItemLargeTitleDisplayModeNever
         }
         // Must be set before the push to take effect.
-        controller.hidesBottomBarWhenPushed = entry.nativeHidesTabBar
+        controller.hidesBottomBarWhenPushed = shared || entry.nativeHidesTabBar
     }
 }
 

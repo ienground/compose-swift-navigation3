@@ -58,6 +58,50 @@ final class NavigationUITests: ExampleAppTestCase {
         log("DONE")
     }
 
+    /// NativeTabs' shared back stack: Profile opens over whichever tab is selected, hides the tab bar,
+    /// and follows the selected tab when the app switches tabs.
+    func testSharedStack() throws {
+        launch()
+        log("PHASE H1 Home: open the shared Profile -> pushed on Home, tab bar hidden")
+        tap("Open profile"); pause(1.2); expectText("Profile edits: 0", "H1")
+        XCTAssertTrue(app.navigationBars["Profile"].exists, "H1: Profile title missing")
+        XCTAssertFalse(tabBarShown(), "H1: tab bar still shown")
+
+        log("PHASE H2 saveable state, then Detail 50 on the shared stack (an even Detail, still no tab bar)")
+        tap("Edit profile"); expectText("Profile edits: 1", "H2a")
+        tap("Open Detail 50"); pause(1.2); expectText("Detail 50", "H2b")
+        XCTAssertFalse(tabBarShown(), "H2: tab bar shown over a shared screen")
+
+        log("PHASE H3 edge swipe back -> Profile keeps its state")
+        edgeSwipe(distance: 320, velocity: 1200, hold: 0); pause(1.5)
+        expectText("Profile edits: 1", "H3")
+
+        log("PHASE H4 back button -> Home with the tab bar")
+        tapBack(); pause(1.2); expectText("Row 3", "H4")
+        XCTAssertTrue(tabBarShown(), "H4: tab bar not back")
+
+        log("PHASE H5 Settings opens the same Profile (its popped state was cleared)")
+        app.tabBars.buttons["Settings"].tap(); pause(1)
+        tap("Open profile from settings"); pause(1.2); expectText("Profile edits: 0", "H5")
+        XCTAssertFalse(tabBarShown(), "H5: tab bar still shown")
+
+        log("PHASE H6 the app selects Gallery -> Profile moves to Gallery with its state")
+        tap("Edit profile"); expectText("Profile edits: 1", "H6a")
+        tap("Switch to Gallery"); pause(2); expectText("Profile edits: 1", "H6b")
+        tapBack(); pause(1.2)
+        XCTAssertTrue(app.navigationBars["Gallery"].waitForExistence(timeout: 5), "H6c: not back on Gallery")
+        XCTAssertTrue(tabBarShown(), "H6c: tab bar not back")
+
+        log("PHASE H7 Settings no longer shows Profile")
+        app.tabBars.buttons["Settings"].tap(); pause(1); expectText("Open profile from settings", "H7")
+        log("DONE")
+    }
+
+    private func tabBarShown() -> Bool {
+        let bar = app.tabBars.firstMatch
+        return bar.exists && bar.isHittable
+    }
+
     /// Switching the root declaration: NativeTabs -> NativeStack (sign-in flow) -> NativeTabs.
     func testRootSwitch() throws {
         launch()

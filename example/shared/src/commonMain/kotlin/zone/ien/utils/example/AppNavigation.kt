@@ -20,7 +20,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
+import org.jetbrains.compose.resources.painterResource
 import zone.ien.navigation.nativeScreen
+import zone.ien.utils.example.resources.Res
+import zone.ien.utils.example.resources.compose_multiplatform
+import zone.ien.utils.example.resources.example_logo
 
 @Serializable
 data object HomeRoute : NavKey
@@ -33,6 +37,10 @@ data object SettingsRoute : NavKey
 
 @Serializable
 data class DetailRoute(val id: Int) : NavKey
+
+/** Opened from any tab over the selected tab (NativeTabs' shared back stack). */
+@Serializable
+data object ProfileRoute : NavKey
 
 /** Signed-out flow: its own stack, shown instead of the tabs. */
 @Serializable
@@ -49,6 +57,7 @@ private val navigationConfiguration = SavedStateConfiguration {
             subclass(GalleryRoute::class)
             subclass(SettingsRoute::class)
             subclass(DetailRoute::class)
+            subclass(ProfileRoute::class)
             subclass(SignInRoute::class)
             subclass(SignInHelpRoute::class)
         }
@@ -59,9 +68,10 @@ private val navigationConfiguration = SavedStateConfiguration {
 var appLog: (String) -> Unit = {}
 
 /**
- * The app's navigation state: one Navigation 3 back stack per tab, and a separate sign-in stack
- * shown instead of the tabs while signed out. Shared by every platform; Android/desktop render it
- * with NavDisplay, iOS with the native controllers.
+ * The app's navigation state: one Navigation 3 back stack per tab, a [shared] stack of screens
+ * shown over the selected tab (opened from any tab), and a separate sign-in stack shown instead of
+ * the tabs while signed out. Shared by every platform; Android/desktop render it with NavDisplay,
+ * iOS with the native controllers.
  *
  * [selectedTab] and [signedIn] live directly in the saveable states they are given, so they are
  * saved whoever reads them (no copying in a side effect, which only runs when the caller of
@@ -70,6 +80,7 @@ var appLog: (String) -> Unit = {}
 @Stable
 class AppNavigation(
     val stacks: List<NavBackStack<NavKey>>,
+    val shared: NavBackStack<NavKey>,
     val signInStack: NavBackStack<NavKey>,
     selectedTab: MutableIntState,
     signedIn: MutableState<Boolean>,
@@ -78,7 +89,13 @@ class AppNavigation(
     var signedIn by signedIn
         private set
 
-    val currentStack: NavBackStack<NavKey> get() = if (signedIn) stacks[selectedTab] else signInStack
+    /** Where [open] pushes: the shared screens while one is shown, else the selected tab's stack. */
+    val currentStack: NavBackStack<NavKey>
+        get() = when {
+            !signedIn -> signInStack
+            shared.isNotEmpty() -> shared
+            else -> stacks[selectedTab]
+        }
 
     /** Leaves the sign-in flow for the tabs (iOS switches the root to the tab bar controller). */
     fun signIn() {
@@ -90,6 +107,7 @@ class AppNavigation(
     fun signOut() {
         signedIn = false
         selectedTab = 0
+        shared.clear()
         stacks.forEach { stack -> stack.resetTo(stack.first()) }
     }
 
@@ -97,8 +115,18 @@ class AppNavigation(
         currentStack.add(route)
     }
 
+    /** Opens [route] over the selected tab, whichever tab it is (e.g. a profile). */
+    fun openShared(route: NavKey) {
+        shared.add(route)
+    }
+
+    fun closeShared() {
+        shared.clear()
+    }
+
     fun goBack() {
-        if (currentStack.size > 1) currentStack.removeLastOrNull()
+        if (shared.isNotEmpty()) shared.removeLastOrNull()
+        else if (currentStack.size > 1) currentStack.removeLastOrNull()
     }
 
     fun replaceTop(route: NavKey) {
@@ -106,12 +134,15 @@ class AppNavigation(
     }
 
     fun popToRoot() {
-        while (currentStack.size > 1) currentStack.removeLastOrNull()
+        shared.clear()
+        val stack = currentStack
+        while (stack.size > 1) stack.removeLastOrNull()
     }
 
     /** Builds a multi-level stack at once, like a deep link would. */
     fun deepLink(tab: Int, vararg routes: NavKey) {
         selectedTab = tab
+        shared.clear()
         val stack = stacks[tab]
         while (stack.size > 1) stack.removeLastOrNull()
         stack.addAll(routes)
@@ -120,7 +151,8 @@ class AppNavigation(
     fun describe(): String = if (!signedIn) {
         "signedOut " + signInStack.joinToString(",") { it.toString() }
     } else {
-        "tab=$selectedTab " + stacks.joinToString(" | ") { stack -> stack.joinToString(",") { it.toString() } }
+        "tab=$selectedTab " + stacks.joinToString(" | ") { stack -> stack.joinToString(",") { it.toString() } } +
+            " shared=" + shared.joinToString(",") { it.toString() }
     }
 }
 
@@ -135,16 +167,20 @@ fun rememberAppNavigation(): AppNavigation {
     val home = rememberNavBackStack(navigationConfiguration, HomeRoute)
     val gallery = rememberNavBackStack(navigationConfiguration, GalleryRoute)
     val settings = rememberNavBackStack(navigationConfiguration, SettingsRoute)
+    val shared = rememberNavBackStack(navigationConfiguration)
     val signIn = rememberNavBackStack(navigationConfiguration, SignInRoute)
     val selectedTab = rememberSaveable { mutableIntStateOf(0) }
     val signedIn = rememberSaveable { mutableStateOf(true) }
-    return remember(home, gallery, settings, signIn, selectedTab, signedIn) {
-        AppNavigation(listOf(home, gallery, settings), signIn, selectedTab, signedIn)
+    return remember(home, gallery, settings, shared, signIn, selectedTab, signedIn) {
+        AppNavigation(listOf(home, gallery, settings), shared, signIn, selectedTab, signedIn)
     }
 }
 
 fun appEntryProvider(navigation: AppNavigation): (NavKey) -> NavEntry<NavKey> = entryProvider {
-    entry<HomeRoute>(metadata = nativeScreen(title = "Home", largeTitle = true)) {
+    // Title images: a bitmap logo on a large-title root, a vector one on a pushed inline screen.
+    entry<HomeRoute>(
+        metadata = nativeScreen(title = "Home", largeTitle = true, titleImage = { painterResource(Res.drawable.example_logo) }),
+    ) {
         HomeScreen(navigation)
     }
     // Odd details hide the tab bar, even ones keep it (to show both behaviors).
@@ -156,6 +192,12 @@ fun appEntryProvider(navigation: AppNavigation): (NavKey) -> NavEntry<NavKey> = 
     }
     entry<SettingsRoute>(metadata = nativeScreen(title = "Settings", largeTitle = true)) {
         SettingsScreen(navigation)
+    }
+    // Shared screens always hide the tab bar; no hidesTabBar needed.
+    entry<ProfileRoute>(
+        metadata = nativeScreen(title = "Profile", titleImage = { painterResource(Res.drawable.compose_multiplatform) }),
+    ) {
+        ProfileScreen(navigation)
     }
     entry<SignInRoute>(metadata = nativeScreen(title = "Welcome", largeTitle = true)) {
         SignInScreen(navigation)

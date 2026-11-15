@@ -19,14 +19,24 @@ import platform.darwin.NSObject
  *   menu, tab re-tap), `didShow` reports it through `onBack()`, once per popped screen. A
  *   cancelled swipe never reaches `didShow` with a pop, so it changes nothing.
  * - Updates that arrive during a transition are applied when it finishes (`didShow`).
+ *
+ * In a tab, the stack shows the tab's own entries followed by [NativeTabs]' shared screens when
+ * the tab is selected. Shared screens always hide the tab bar, and UIKit pops of them are
+ * reported through `onSharedBack` instead of the tab's `onBack`.
  */
 internal class StackCoordinator(
     val navigationController: UINavigationController,
     private val leases: ContentLeases,
+    private val titleImages: TitleImages = TitleImages(),
 ) {
     private var screens: List<EntryScreen> = emptyList()
     private var target: List<NavEntry<*>> = emptyList()
+
+    /** Index in [target] where the shared screens start. */
+    private var sharedFrom = 0
     private var onBack: () -> Unit = {}
+    private var onSharedBack: () -> Unit = {}
+    private var animated = true
     private var initialized = false
 
     private val delegate = object : NSObject(), UINavigationControllerDelegateProtocol {
@@ -45,9 +55,22 @@ internal class StackCoordinator(
         navigationController.navigationBar.prefersLargeTitles = true
     }
 
-    fun update(entries: List<NavEntry<*>>, onBack: () -> Unit) {
-        this.target = entries
+    /**
+     * Shows [entries] followed by [shared]. [animated] is `false` for a stack that is not on screen
+     * (an unselected tab), so it changes without a transition.
+     */
+    fun update(
+        entries: List<NavEntry<*>>,
+        onBack: () -> Unit,
+        shared: List<NavEntry<*>> = emptyList(),
+        onSharedBack: () -> Unit = {},
+        animated: Boolean = true,
+    ) {
+        this.target = if (shared.isEmpty()) entries else entries + shared
+        this.sharedFrom = entries.size
         this.onBack = onBack
+        this.onSharedBack = onSharedBack
+        this.animated = animated
         apply()
     }
 
@@ -63,6 +86,7 @@ internal class StackCoordinator(
         screens = emptyList()
         target = emptyList()
         onBack = {}
+        onSharedBack = {}
         removed.forEach { it.markRemoved() }
     }
 
@@ -71,14 +95,19 @@ internal class StackCoordinator(
         if (navigationController.transitionCoordinator != null) return // re-applied in didShow
 
         val update = stackUpdate(screens.map { it.contentKey }, target.map { it.contentKey })
-        for (index in 0 until update.keep) screens[index].entry = target[index]
+        for (index in 0 until update.keep) {
+            screens[index].shared = index >= sharedFrom
+            screens[index].entry = target[index]
+        }
         if (update is StackUpdate.None) return
 
         val kept = screens.take(update.keep)
         val removed = screens.drop(update.keep)
-        val created = target.drop(update.keep).map { EntryScreen(it, leases) }
+        val created = target.drop(update.keep).mapIndexed { offset, entry ->
+            EntryScreen(entry, leases, titleImages).also { it.shared = update.keep + offset >= sharedFrom }
+        }
         val next = kept + created
-        val animated = initialized
+        val animated = initialized && this.animated
         screens = next
         initialized = true
 
@@ -128,8 +157,10 @@ internal class StackCoordinator(
             val removed = screens.drop(remaining.size)
             screens = remaining
             target = target.take(remaining.size)
+            sharedFrom = minOf(sharedFrom, remaining.size)
             removed.forEach { it.markRemoved() }
-            repeat(popped) { onBack() }
+            // Top first: the shared screens sit above the tab's own ones.
+            removed.asReversed().forEach { screen -> if (screen.shared) onSharedBack() else onBack() }
             Snapshot.sendApplyNotifications()
             updateBackActions()
         }

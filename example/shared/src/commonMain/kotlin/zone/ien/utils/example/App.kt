@@ -1,10 +1,12 @@
 package zone.ien.utils.example
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -26,11 +28,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
+import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavEntryDecorator
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import zone.ien.navigation.NativeBarButton
+import zone.ien.navigation.NativeNavigationFrame
 import zone.ien.navigation.NativeNavigationScope
 import zone.ien.navigation.NativeStack
 import zone.ien.navigation.NativeTab
@@ -48,6 +52,14 @@ import zone.ien.navigation.NativeTabs
 fun App(navigation: AppNavigation = rememberAppNavigation()) {
     val entryProvider = remember(navigation) { appEntryProvider(navigation) }
 
+    // The theme wraps the app once on Android/desktop and each native screen on iOS.
+    NativeNavigationFrame(frame = { content -> AppTheme(content) }) {
+        AppNavigationDeclaration(navigation, entryProvider)
+    }
+}
+
+@Composable
+private fun AppNavigationDeclaration(navigation: AppNavigation, entryProvider: (NavKey) -> NavEntry<NavKey>) {
     // Signed in: tabs. Signed out: a plain stack. The decorators belong to each branch, so the
     // state of the branch that leaves is cleared (as when a NavDisplay leaves composition); on iOS
     // the switch swaps the root controller with a cross-dissolve.
@@ -60,6 +72,8 @@ fun App(navigation: AppNavigation = rememberAppNavigation()) {
             ),
             selectedTab = navigation.selectedTab,
             onTabSelected = { navigation.selectedTab = it },
+            // Screens any tab opens (Profile), shown over the selected tab without the tab bar.
+            sharedBackStack = navigation.shared,
             entryDecorators = rememberAppEntryDecorators(),
             entryProvider = entryProvider,
         ) { MaterialChrome() }
@@ -77,74 +91,75 @@ fun AppTheme(content: @Composable () -> Unit) {
     MaterialTheme(content = content)
 }
 
-/**
- * The theme is applied per entry: on iOS every screen is its own composition, so a theme around
- * the navigation would not reach it. Elsewhere `NavDisplay` runs the same decorator.
- */
 @Composable
 private fun rememberAppEntryDecorators(): List<NavEntryDecorator<NavKey>> = listOf(
-    remember { NavEntryDecorator<NavKey> { entry -> AppTheme { entry.Content() } } },
     rememberSaveableStateHolderNavEntryDecorator(),
     rememberViewModelStoreNavEntryDecorator(),
 )
 
 /**
  * Android / desktop chrome: Material 3 drawn from what the screens declared (`nativeScreen`
- * metadata, `NativeBarItems`, `NativeSearchBar`) and from the tabs. The library draws no Android
- * UI; iOS shows the same declarations in the native bars.
+ * metadata, `NativeBarItems`, `NativeSearchBar`) and from the tabs, inside the app's frame
+ * (`NativeNavigationFrame`). The library draws no Android UI; iOS shows the same declarations in
+ * the native bars.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NativeNavigationScope<NavKey>.MaterialChrome() {
-    AppTheme {
-        Scaffold(
-            topBar = {
-                Column {
-                    TopAppBar(
-                        title = { Text(title.orEmpty()) },
-                        navigationIcon = {
-                            Row {
-                                if (canGoBack) TextButton(onClick = onBack) { Text("Back") }
-                                leading.forEach { BarActionButton(it) }
-                            }
-                        },
-                        actions = { trailing.forEach { BarActionButton(it) } },
+    Scaffold(
+        topBar = {
+            Column {
+                TopAppBar(
+                    title = {
+                        val image = titleImage
+                        if (image != null) {
+                            Image(image(), contentDescription = title, modifier = Modifier.height(28.dp))
+                        } else {
+                            Text(title.orEmpty())
+                        }
+                    },
+                    navigationIcon = {
+                        Row {
+                            if (canGoBack) TextButton(onClick = onBack) { Text("Back") }
+                            leading.forEach { BarActionButton(it) }
+                        }
+                    },
+                    actions = { trailing.forEach { BarActionButton(it) } },
+                )
+                search?.let { search ->
+                    OutlinedTextField(
+                        value = search.query,
+                        onValueChange = search.onQueryChange,
+                        placeholder = { Text(search.placeholder) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                     )
-                    search?.let { search ->
-                        OutlinedTextField(
-                            value = search.query,
-                            onValueChange = search.onQueryChange,
-                            placeholder = { Text(search.placeholder) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                }
+            }
+        },
+        bottomBar = {
+            Column {
+                if (toolbar.isNotEmpty()) {
+                    Surface(tonalElevation = 3.dp) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            toolbar.forEach { BarActionButton(it) }
+                        }
+                    }
+                }
+                if (tabBarVisible) NavigationBar {
+                    tabs.forEachIndexed { index, tab ->
+                        NavigationBarItem(
+                            selected = selectedTab == index,
+                            onClick = { onTabSelected(index) },
+                            icon = { Text(tab.title.take(1)) },
+                            label = { Text(tab.title) },
                         )
                     }
                 }
-            },
-            bottomBar = {
-                Column {
-                    if (toolbar.isNotEmpty()) {
-                        Surface(tonalElevation = 3.dp) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                                toolbar.forEach { BarActionButton(it) }
-                            }
-                        }
-                    }
-                    if (tabBarVisible) NavigationBar {
-                        tabs.forEachIndexed { index, tab ->
-                            NavigationBarItem(
-                                selected = selectedTab == index,
-                                onClick = { onTabSelected(index) },
-                                icon = { Text(tab.title.take(1)) },
-                                label = { Text(tab.title) },
-                            )
-                        }
-                    }
-                }
-            },
-        ) { innerPadding ->
-            NavDisplay(entries = entries, modifier = Modifier.padding(innerPadding), onBack = onBack)
-        }
+            }
+        },
+    ) { innerPadding ->
+        NavDisplay(entries = entries, modifier = Modifier.padding(innerPadding), onBack = onBack)
     }
 }
 

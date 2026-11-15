@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavEntryDecorator
 import androidx.navigation3.runtime.rememberDecoratedNavEntries
@@ -56,14 +57,15 @@ public fun <T : Any> NativeStack(
     entryProvider: (key: T) -> NavEntry<T>,
     otherPlatforms: @Composable NativeNavigationScope<T>.() -> Unit,
 ) {
-    val entries = rememberDecoratedNavEntries(backStack, entryDecorators, entryProvider)
+    val entries = rememberDecoratedNavEntries(backStack, rememberFramedDecorators(entryDecorators), entryProvider)
     val host = LocalNativeNavigationHost.current
     if (host != null) {
         host.Stack(entries, onBack)
     } else {
         checkWithoutNativeNavigation("NativeStack")
         OtherPlatformNavigation(
-            entries = entries,
+            tabEntries = entries,
+            sharedEntries = emptyList(),
             onBack = onBack,
             tabs = emptyList(),
             selectedTab = 0,
@@ -79,36 +81,57 @@ public fun <T : Any> NativeStack(
  *
  * - **iOS**: inside `NativeNavigationViewController` it is a native `UITabBarController` with one
  *   `UINavigationController` per tab, and [otherPlatforms] is not called. Re-tapping the selected
- *   tab pops it to its root (native behavior), reported through that tab's `onBack`.
+ *   tab pops it to its root (native behavior), reported through that tab's `onBack` (and
+ *   [onSharedBack] for the shared screens).
  * - **Other platforms**: the library draws nothing. [otherPlatforms] draws the app's own UI with
- *   what [NativeNavigationScope] hands it: the selected tab's entries for `NavDisplay`, and the
- *   tabs for a Material 3 `NavigationBar`.
+ *   what [NativeNavigationScope] hands it: the visible entries for `NavDisplay`, and the tabs for
+ *   a Material 3 `NavigationBar`.
+ *
+ * **Shared screens**: [sharedBackStack] holds screens shown over the tabs, shared by every tab,
+ * like a `NavDisplay` around the tabs whose first entry is the tabs themselves (e.g. a profile or
+ * an editor that any tab opens). It may be empty. Its screens always hide the tab bar, so the
+ * user cannot switch tabs while one is shown.
+ * - iOS: they are pushed on the selected tab's `UINavigationController`, above that tab's own
+ *   screens (native back button, edge swipe and transitions). If the app changes [selectedTab]
+ *   while they are shown, they move to the newly selected tab.
+ * - Other platforms: [NativeNavigationScope.entries] is the selected tab's entries followed by
+ *   the shared ones; [NativeNavigationScope.tabEntries] and [NativeNavigationScope.sharedEntries]
+ *   hand them apart, e.g. for an outer `NavDisplay` over the tabs.
  *
  * Tabs are only supported at the root: not inside a pushed screen.
+ *
+ * @param sharedBackStack screens shown over the selected tab, shared by every tab.
+ * @param onSharedBack called once per popped shared screen. It must remove the last entry of
+ *   [sharedBackStack].
  */
 @Composable
 public fun <T : Any> NativeTabs(
     tabs: List<NativeTab<T>>,
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
+    sharedBackStack: List<T> = emptyList(),
+    onSharedBack: () -> Unit = { (sharedBackStack as? MutableList<T>)?.removeLastOrNull() },
     entryDecorators: List<NavEntryDecorator<T>> = listOf(rememberSaveableStateHolderNavEntryDecorator()),
     entryProvider: (key: T) -> NavEntry<T>,
     otherPlatforms: @Composable NativeNavigationScope<T>.() -> Unit,
 ) {
     // One rememberDecoratedNavEntries per back stack, as Navigation 3 requires for multiple
     // stacks: the entries of an unselected tab stay in their back stack, so their state is kept.
+    val decorators = rememberFramedDecorators(entryDecorators)
     val entriesPerTab = tabs.mapIndexed { index, tab ->
-        key(index) { rememberDecoratedNavEntries(tab.backStack, entryDecorators, entryProvider) }
+        key(index) { rememberDecoratedNavEntries(tab.backStack, decorators, entryProvider) }
     }
+    val sharedEntries = rememberDecoratedNavEntries(sharedBackStack, decorators, entryProvider)
     val host = LocalNativeNavigationHost.current
     if (host != null) {
-        host.Tabs(tabs, entriesPerTab, selectedTab, onTabSelected)
+        host.Tabs(tabs, entriesPerTab, selectedTab, onTabSelected, sharedEntries, onSharedBack)
     } else {
         checkWithoutNativeNavigation("NativeTabs")
         val index = selectedTab.coerceIn(0, (tabs.size - 1).coerceAtLeast(0))
         OtherPlatformNavigation(
-            entries = entriesPerTab.getOrElse(index) { emptyList() },
-            onBack = tabs.getOrNull(index)?.onBack ?: {},
+            tabEntries = entriesPerTab.getOrElse(index) { emptyList() },
+            sharedEntries = sharedEntries,
+            onBack = if (sharedEntries.isNotEmpty()) onSharedBack else tabs.getOrNull(index)?.onBack ?: {},
             tabs = tabs,
             selectedTab = index,
             onTabSelected = onTabSelected,
@@ -148,13 +171,26 @@ public fun <T : Any> NativeTabs(
  */
 public interface NativeNavigationScope<T : Any> {
     /**
-     * Decorated entries of the visible back stack ([NativeStack]'s, or the selected tab's), for
-     * `NavDisplay(entries, onBack = onBack)`. Each tab has its own, so switching tabs keeps every
-     * tab's state.
+     * Decorated entries of the visible back stack, for `NavDisplay(entries, onBack = onBack)`:
+     * [NativeStack]'s, or the selected tab's followed by [NativeTabs]' shared screens
+     * ([tabEntries] + [sharedEntries]). Each tab has its own, so switching tabs keeps every tab's
+     * state.
      */
     public val entries: List<NavEntry<T>>
 
-    /** Pops the visible back stack: [NativeStack]'s `onBack`, or the selected [NativeTab.onBack]. */
+    /** [entries] without [sharedEntries]: the selected tab's own back stack ([NativeStack]: all of it). */
+    public val tabEntries: List<NavEntry<T>>
+
+    /**
+     * Decorated entries of [NativeTabs]' `sharedBackStack`, shown over the selected tab (the end
+     * of [entries]). Empty for [NativeStack] and while no shared screen is shown.
+     */
+    public val sharedEntries: List<NavEntry<T>>
+
+    /**
+     * Pops the top of [entries]: [NativeStack]'s `onBack`, [NativeTabs]' `onSharedBack` while a
+     * shared screen is shown, else the selected [NativeTab.onBack].
+     */
     public val onBack: () -> Unit
 
     /** Whether the visible back stack has a screen below the top one (iOS shows a back button). */
@@ -165,6 +201,12 @@ public interface NativeNavigationScope<T : Any> {
 
     /** Whether the top screen asked for a large title ([nativeScreen] `largeTitle`). */
     public val largeTitle: Boolean
+
+    /**
+     * Image the top screen shows in place of its title text ([nativeScreen] `titleImage`), e.g.
+     * `Image(it(), contentDescription = title)` in the top app bar's title slot.
+     */
+    public val titleImage: (@Composable () -> Painter)?
 
     /** [NativeBarItems] `leading` buttons of the top screen. */
     public val leading: List<NativeBarButton>
@@ -188,16 +230,18 @@ public interface NativeNavigationScope<T : Any> {
     public val onTabSelected: (Int) -> Unit
 
     /**
-     * Whether to show the tab bar: there are [tabs], and no screen pushed on the selected tab has
-     * [nativeScreen] `hidesTabBar` (UIKit's `hidesBottomBarWhenPushed` rule: once a screen hides
-     * the tab bar, the screens pushed above it keep it hidden).
+     * Whether to show the tab bar: there are [tabs], no shared screen is shown, and no screen
+     * pushed on the selected tab has [nativeScreen] `hidesTabBar` (UIKit's
+     * `hidesBottomBarWhenPushed` rule: once a screen hides the tab bar, the screens pushed above
+     * it keep it hidden).
      */
     public val tabBarVisible: Boolean
 }
 
 @Composable
 private fun <T : Any> OtherPlatformNavigation(
-    entries: List<NavEntry<T>>,
+    tabEntries: List<NavEntry<T>>,
+    sharedEntries: List<NavEntry<T>>,
     onBack: () -> Unit,
     tabs: List<NativeTab<T>>,
     selectedTab: Int,
@@ -205,27 +249,31 @@ private fun <T : Any> OtherPlatformNavigation(
     content: @Composable NativeNavigationScope<T>.() -> Unit,
 ) {
     val bar = remember { NativeBarState() }
-    val scope = OtherPlatformScope(entries, onBack, tabs, selectedTab, onTabSelected, bar)
+    val scope = OtherPlatformScope(tabEntries, sharedEntries, onBack, tabs, selectedTab, onTabSelected, bar)
     ProvideNativeBarState(bar) { scope.content() }
 }
 
 /** Reads the bar declarations when the app reads them, so only the chrome recomposes. */
 internal class OtherPlatformScope<T : Any>(
-    override val entries: List<NavEntry<T>>,
+    override val tabEntries: List<NavEntry<T>>,
+    override val sharedEntries: List<NavEntry<T>>,
     override val onBack: () -> Unit,
     override val tabs: List<NativeTab<T>>,
     override val selectedTab: Int,
     override val onTabSelected: (Int) -> Unit,
     private val bar: NativeBarState,
 ) : NativeNavigationScope<T> {
+    override val entries: List<NavEntry<T>> = if (sharedEntries.isEmpty()) tabEntries else tabEntries + sharedEntries
     override val canGoBack: Boolean get() = entries.size > 1
     override val title: String? get() = bar.title ?: entries.lastOrNull()?.nativeTitle
     override val largeTitle: Boolean get() = entries.lastOrNull()?.nativeLargeTitle ?: false
+    override val titleImage: (@Composable () -> Painter)? get() = entries.lastOrNull()?.nativeTitleImage
     override val leading: List<NativeBarButton> get() = bar.leading
     override val trailing: List<NativeBarButton> get() = bar.trailing
     override val toolbar: List<NativeBarButton> get() = bar.toolbar
     override val search: NativeSearch? get() = bar.search
-    override val tabBarVisible: Boolean get() = tabs.isNotEmpty() && entries.drop(1).none { it.nativeHidesTabBar }
+    override val tabBarVisible: Boolean
+        get() = tabs.isNotEmpty() && sharedEntries.isEmpty() && tabEntries.drop(1).none { it.nativeHidesTabBar }
 }
 
 /**
@@ -242,6 +290,8 @@ internal interface NativeNavigationHost {
         entriesPerTab: List<List<NavEntry<*>>>,
         selectedTab: Int,
         onTabSelected: (Int) -> Unit,
+        sharedEntries: List<NavEntry<*>>,
+        onSharedBack: () -> Unit,
     )
 }
 

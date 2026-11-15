@@ -40,13 +40,15 @@
 - 검색(6.10장)
 - 루트 전환: `NativeStack`과 `NativeTabs` 사이 전환(6.6장)
 - 공통 선언: `NativeStack`/`NativeTabs`를 commonMain에 두고, 앱의 루트 `App()` 하나를 모든 플랫폼이 쓴다(6.6장)
+- 탭 위의 공유 화면: 어느 탭에서든 여는 화면을 `NativeTabs(sharedBackStack)` 하나로 둔다(6.6장)
 
 - `:library` (패키지 `zone.ien.navigation`, Maven 좌표 `zone.ien.navigation:compose-swift-navigation3:<version>`)
   - commonMain 공개 API
     - 스크롤 연동: `rememberNativeScroll(state, background)`, `NativeScroll`, `nativeContentPadding`, `Modifier.nativeScrollExclusion()`
-    - 화면 메타데이터: `nativeScreen(...)`, 그리고 메타데이터를 읽는 `NavEntry.nativeTitle` 등
+    - 화면 메타데이터: `nativeScreen(...)`(제목 이미지 `titleImage` 포함), 그리고 메타데이터를 읽는 `NavEntry.nativeTitle` 등
     - 바 아이템과 검색: `NativeBarItems`, `NativeBarButton`, `NativeMenuAction`, `NativeSearchBar`, `NativeBarState`, `ProvideNativeBarState`
-    - 내비게이션 선언: `NativeStack`, `NativeTabs`, `NativeTab`, 그리고 iOS가 아닌 플랫폼의 블록이 받는 `NativeNavigationScope`
+    - 내비게이션 선언: `NativeStack`, `NativeTabs`(탭 위의 공유 화면 `sharedBackStack` 포함), `NativeTab`, 그리고 iOS가 아닌 플랫폼의 블록이 받는 `NativeNavigationScope`
+    - 앱 틀: `NativeNavigationFrame(providers, frame)`, 네이티브 화면 여부 `LocalNativeScreen`
   - iosMain 공개 API
     - 화면 하나: `ComposeScreenViewController`
     - Navigation 3 앱 전체: `NativeNavigationViewController(restoredState, stateVersion) { ... }`
@@ -55,8 +57,10 @@
   - 라우트는 `HomeRoute`, `GalleryRoute`, `DetailRoute(id)`, `SettingsRoute`이고, 탭 3개(Home, Gallery, Settings)가 각자 백스택을 가진다.
   - Gallery 탭은 `LazyVerticalGrid`와 `LazyVerticalStaggeredGrid`를 바 버튼으로 바꿔 가며 보여준다.
   - 모든 플랫폼이 `App()` 하나를 쓴다. iOS는 `NativeTabs`를 네이티브 컨트롤러로 그리고, Android와 Desktop은 `NativeTabs`의 블록(`MaterialChrome()`)에서 `NavDisplay`와 Material 3로 그린다.
-  - 테마(`AppTheme`)는 엔트리 decorator로 화면마다 적용한다. iOS 화면은 composition이 따로 있기 때문이다.
+  - 테마(`AppTheme`)는 `NativeNavigationFrame(frame = { AppTheme(it) })`로 준다. Android는 앱 전체를 한 번, iOS는 각 화면을 감싼다.
   - 홀수 Detail은 탭 바를 숨기고, 짝수 Detail은 탭 바를 그대로 둔다. 두 동작을 함께 보여주기 위해서다.
+  - 공유 화면: Home과 Settings에서 여는 `ProfileRoute`는 공유 백스택(`AppNavigation.shared`)에 쌓인다. Profile에서 연 Detail 50도 같은 스택이다. "Switch to Gallery"는 공유 화면이 보이는 동안 앱이 탭을 바꾸는 경우다.
+  - 제목 이미지(시험용, 6.7장): Home은 512px PNG 로고(`example_logo.png`, 큰 제목), Profile은 벡터 로고(`compose-multiplatform.xml`, 인라인 제목)를 제목 자리에 보인다.
   - 로그인 흐름: Settings의 "Sign out"을 누르면 탭 대신 로그인 스택(`SignInRoute` → `SignInHelpRoute`)이 나오고, "Sign in"을 누르면 탭으로 돌아간다. `App()`이 `NativeTabs`와 `NativeStack`을 `if`로 바꿔 선언한다. 로그아웃하면 탭 스택을 루트로 되돌린다.
 - `example/iosApp`: SwiftUI `App` → `UIViewControllerRepresentable` → `MainViewController()` 구조다. `MainViewController()`는 `NativeNavigationViewController { App(navigation) }`를 반환한다. 테스트용 추적 코드(`-traceNav`, `-demoDeepLink`)만 iOS 진입점에 있다.
 - `example/iosUITests`: 예제 앱을 실제 터치로 검증하는 XCUITest 프로젝트다(5장).
@@ -189,7 +193,7 @@ python3 -I example/iosUITests/timeline.py build/ui-tests/<UDID>               # 
   - ViewModel 생성과 정리, 화면 composition
 - 테스트 목록
   - `ScrollUITests`: 6.5장 스크롤 연동
-  - `NavigationUITests`: 6.6장 동기화, 루트 전환(`testRootSwitch`)
+  - `NavigationUITests`: 6.6장 동기화, 루트 전환(`testRootSwitch`), 탭 위의 공유 화면(`testSharedStack`)
   - `BarItemsUITests`: 6.7장 바 아이템
   - `RestorationUITests`: 6.8장 상태 복원, 로그아웃 상태(로그인 스택) 복원
   - `GestureUITests`: 6.9장 뒤로가기 핸들러(forward 전용 핸들러, 루트 뒤로 버튼 포함), 6.5장 세로 드래그 제외 영역과 `ScrollState`
@@ -221,6 +225,23 @@ python3 -I example/iosUITests/timeline.py build/ui-tests/<UDID>               # 
   - 오래 쓴 iOS 18.5 iPhone 16에서는 `testRestoreSignedOut`이 `RESTORE none`으로 실패했다. 재실행 직후 "Persistent SceneSession Map Update"가 찍힌, 위에 적은 시뮬레이터 상태 문제다.
   - 최종 코드: iOS 27.2(iPhone 17)와 새로 만든 iOS 18.5(iPhone 16 `UI test 18.5`)에서 14개 모두 통과했다.
   - Gradle: `jvmTest`, `testAndroidHostTest`, `iosSimulatorArm64Test`, `jsTest`, `wasmJsTest`, 예제 Android·Desktop 빌드가 통과했다. 새 `NativeNavigationScopeTest`(제목 fallback, 탭 바 규칙, 바 아이템) 8개를 포함한다.
+- 2026-11-15 `NativeNavigationFrame`, `LocalNativeScreen`, 호스트 기본 locals를 추가하고 예제 테마를 frame으로 옮긴 뒤 실행했다(6.6장).
+  - iOS 27.2(iPhone 18 Pro): 14개 모두 통과했다. iOS 18.x는 이번에 실행하지 않았다(사용자 요청으로 이미 켜진 시뮬레이터만 썼다).
+  - Gradle: `jvmTest`, `testAndroidHostTest`, `iosSimulatorArm64Test`, `jsTest`, `wasmJsTest`, 예제 Android·Desktop 빌드가 통과했다.
+  - Android 예제(에뮬레이터)에서 frame으로 준 테마가 Material 바와 화면에 적용되는 것을 눈으로 확인했다.
+  - Hotpot: iOS 빌드와 투어(탭, 상세 push와 뒤로, 테마, Compose 탑바 숨김)를 iPhone 18 Pro에서, Android 실행을 에뮬레이터에서 확인했다. host 테스트 289개가 통과했다.
+- 2026-11-15 탭 위의 공유 화면(`NativeTabs(sharedBackStack)`)을 추가한 뒤 실행했다(6.6장). 15개(`testSharedStack` 추가)다.
+  - iOS 27.2(iPhone 18 Pro): 14개 통과, `SearchUITests`만 S2에서 실패했다. 검색어를 지우면 목록이 Row 40 근처가 아니라 맨 위로 돌아갔다(2026-11-14 iPhone 17과 같은 증상).
+    - 이번 변경 전 상태(스테이징된 코드)로 같은 시뮬레이터에서 돌려도 같은 단계에서 실패했다. 이번 변경 때문이 아니다. 같은 날 앞선 실행에서는 통과했으므로 시뮬레이터 상태(키보드)와 관련된 것으로 보이지만 원인은 아직 확인하지 않았다.
+  - iOS 18.x는 실행하지 않았다(사용자 요청으로 이미 켜진 시뮬레이터만 썼다).
+  - Gradle: `jvmTest`, `testAndroidHostTest`, `iosSimulatorArm64Test`(라이브러리 82개, 새 `StackCoordinatorTest` 4개 포함), `jsTest`, `wasmJsTest`, 예제 Android·Desktop 빌드가 통과했다.
+  - Android 예제(에뮬레이터): Home에서 Profile 열기(하단 탭 숨김), 시스템 뒤로가기, Settings에서 연 Profile을 Gallery로 옮긴 뒤 뒤로가기를 화면으로 확인했다.
+    - Profile은 바 아이템을 선언하지 않는다. 그래서 push 직후 Home이 composition에 남아 있는 동안 Home의 "Open 42"와 검색 필드가 Material 바에 잠깐 보였다(가장 최근에 등록한 화면이 이기는 규칙, 6.7장). 몇 초 뒤에는 사라졌다.
+  - Hotpot: 상세 화면과 게스트 로그인 화면을 공유 스택으로 옮겼다. iOS 투어(설정 → 상세 push와 뒤로 버튼, 다시 연 상세의 가장자리 스와이프, 탭 전환)를 iPhone 18 Pro에서 통과했고 host 테스트 289개가 통과했다. 시뮬레이터가 실제 계정으로 로그인돼 있어 게스트 로그인 화면은 확인하지 않았다.
+- 2026-11-15 제목 이미지(시험용, 6.7장)를 추가한 뒤 실행했다. 예제 Home(PNG 로고, 큰 제목)과 Profile(벡터 로고)에 `titleImage`를 넣은 상태다.
+  - iOS 27.2(iPhone 18 Pro): 15개 모두 통과했다(`SearchUITests` 포함). iOS 18.x는 실행하지 않았다.
+  - Gradle: `jvmTest`, `testAndroidHostTest`, `iosSimulatorArm64Test`(라이브러리 83개, 새 `titleImageComesFromTheTopEntryMetadata` 포함), 예제 Android·Desktop 빌드가 통과했다. `jsTest`, `wasmJsTest`는 실행하지 않았다.
+  - Android 예제(Pixel 7a): Home의 Material 탑바 제목 자리에 로고가 나오는 것을 화면으로 확인했다.
 - 모든 테스트는 `-freshStart`로 시작해 복원된 상태를 무시한다. 복원 테스트만 두 번째 실행에서 이 인자를 뺀다.
 
 ## 6. 아키텍처 방향
@@ -401,18 +422,24 @@ iOS에서는 탑바 전체가 시스템 `UINavigationBar`다. Compose는 바 아
   - 화면이 스택에서 제거되면 내용을 composition에서 내린다.
     - 앱이 애니메이션으로 pop하면 전환이 끝난 뒤에 내린다(`StackCoordinator.retire`). `NavDisplay`가 나가는 엔트리를 애니메이션 동안 그리는 것과 같다.
     - window를 떠난 화면의 composition은 다시 그려지지 않는다. 그래서 내용을 내리라는 상태 변경은 CMP가 그 scene을 dispose할 때(아래 CMP 동작, 최대 약 0.5초) 실제로 반영된다.
-- **화면 메타데이터**: `nativeScreen(title, largeTitle, hidesTabBar)`를 엔트리 metadata에 넣는다. 그러면 `navigationItem.title`, `largeTitleDisplayMode`, `hidesBottomBarWhenPushed`(push 전에 설정)가 적용된다. 키별로 다른 값이 필요하면 `entry<K>(metadata = { key -> ... })`를 쓴다.
+- **화면 메타데이터**: `nativeScreen(title, largeTitle, hidesTabBar, titleImage)`를 엔트리 metadata에 넣는다. 그러면 `navigationItem.title`, `largeTitleDisplayMode`, `hidesBottomBarWhenPushed`(push 전에 설정), `titleView`(6.7장 제목 이미지)가 적용된다. 키별로 다른 값이 필요하면 `entry<K>(metadata = { key -> ... })`를 쓴다.
   - 제목은 push 전에 정해져야 전환과 함께 보인다. 화면 상태와 무관한 제목은 metadata로 선언한다(6.7장 제목의 적용 시점).
 
 **공통 선언** (commonMain `NativeNavigation.kt`)
 - `NativeStack`, `NativeTabs`, `NativeTab`은 commonMain에 있다. 그래서 앱은 루트 Composable(`App()`)을 하나만 쓴다. iOS 진입점은 `NativeNavigationViewController { App() }`, Android는 `setContent { App() }`이다.
 - 두 함수는 먼저 `rememberDecoratedNavEntries`로 엔트리를 만든다. `NativeTabs`는 탭마다 따로 만든다(`key(index)`). 그다음 플랫폼에 따라 나뉜다.
   - **iOS**: 루트 컨트롤러가 호스트 composition에 `LocalNativeNavigationHost`를 제공한다. 엔트리를 그 호스트(`RootNavigationHost`)에 넘기면 아래 동기화가 시작된다. 마지막 블록(`otherPlatforms`)은 실행하지 않으므로 `App()`은 iOS에서 UI를 내보내지 않는다.
-  - **그 밖의 플랫폼**: 호스트가 없으면 `NativeBarState`를 제공하고 블록을 실행한다. 블록의 receiver(`NativeNavigationScope`)는 보이는 백스택의 엔트리, `onBack`, `canGoBack`, 제목(`NativeBarItems` 제목, 없으면 metadata 제목), 바 아이템, 검색, 탭, `tabBarVisible`을 준다. 앱은 이것으로 Material 구성과 `NavDisplay(entries, onBack = onBack)`를 그린다.
+  - **그 밖의 플랫폼**: 호스트가 없으면 `NativeBarState`를 제공하고 블록을 실행한다. 블록의 receiver(`NativeNavigationScope`)는 보이는 백스택의 엔트리(`entries`, 나눠 쓰는 `tabEntries`·`sharedEntries`), `onBack`, `canGoBack`, 제목(`NativeBarItems` 제목, 없으면 metadata 제목), 바 아이템, 검색, 탭, `tabBarVisible`을 준다. 앱은 이것으로 Material 구성과 `NavDisplay(entries, onBack = onBack)`를 그린다.
   - iOS에서 호스트 없이 호출하면 예외를 던진다(`usesNativeNavigation`, 플랫폼별 `actual`). iOS에서 Compose로 대신 그리는 경로를 두지 않는다(6.4장).
 - Android도 탭마다 `rememberDecoratedNavEntries`를 따로 두므로, 탭을 바꿔도 다른 탭 엔트리가 백스택에 남아 상태(`rememberSaveable`, ViewModel)가 유지된다. Navigation 3의 여러 백스택 샘플(`MultipleBackStackSample`)과 같은 방식이다.
 - `tabBarVisible`은 UIKit `hidesBottomBarWhenPushed`처럼 선택된 탭에서 push된 화면(루트 제외) 중 하나라도 `hidesTabBar`면 `false`다. iOS에서 루트 화면의 `hidesTabBar`가 어떻게 동작하는지는 확인하지 않았다(예제에는 그런 루트가 없다).
-- 테마 같은 CompositionLocal은 화면마다 엔트리 decorator로 넣는다. iOS 화면은 composition이 따로 있어 `App()`에서 감싼 값이 닿지 않는다. decorator는 iOS에서는 화면 composition 안에서, Android에서는 `NavDisplay` 안에서 실행된다.
+- **앱 틀** (commonMain `NativeNavigationFrame.kt`): 앱이 지금 `NavDisplay`를 감싸는 것(테마, DI `CompositionLocalProvider`, 루트 Scaffold)을 `NativeNavigationFrame(providers, frame) { ... }`에 넘긴다.
+  - iOS가 아닌 플랫폼: `providers { frame { content } }`. 앱 전체를 한 번 감싼다.
+  - iOS 호스트: `providers`만 호스트에 씌우고(상태 홀더, 알림창이 본다), `providers { frame { ... } }`를 각 화면에 씌운다. 화면에는 가장 바깥 엔트리 decorator로 들어간다(`rememberFramedDecorators`). iOS 화면은 composition이 따로 있어 호스트에서 감싼 값이 닿지 않기 때문이다.
+  - `providers`는 UI를 내보내면 안 된다(호스트에서도 실행된다). `frame`은 화면 안에서만 실행되므로 UI를 둬도 된다.
+  - `frame` 등 화면 안의 코드는 `LocalNativeScreen.current`(iOS 네이티브 화면에서 `true`)로 플랫폼별 처리를 한다. 예: 화면별 Compose 탑바 숨김, Android에서만 `imePadding()`.
+  - 호스트 composition은 `LocalUIViewController`(루트 컨트롤러)와 `LocalDensity`(`UIScreen.mainScreen.scale`)를 기본으로 제공한다. 그래서 공통 코드의 adaptive 알림창과 `stringResource`가 호스트에서 그대로 동작한다.
+  - 엔트리 decorator로 화면마다 테마를 씌우는 방식도 그대로 쓸 수 있다.
   - 예제는 테마를 decorator로 옮기면서 iOS 화면에도 `MaterialTheme`이 적용됐다. 그 전에는 iOS 화면에 테마가 없어 기본 글자 스타일이 Android(`bodyLarge`, 16sp/24sp)와 달랐다(`TextStyle.Default`). 그래서 Home 행 높이가 52pt로 커졌고, `ScrollUITests.testLandscape`는 가로 화면에서 아래로 밀린 Row 2 대신 Row 0을 누르도록 바꿨다.
 - **함정: 저장 값을 `SideEffect`로 복사하는 상태 홀더.** 예제 `rememberAppNavigation()`은 `signedIn`, `selectedTab`을 `SideEffect`로 `rememberSaveable` 값에 복사했다. `SideEffect`는 호출한 scope가 recompose될 때만 실행된다.
   - 이전 iOS 진입 람다는 `navigation.signedIn`을 직접 읽어 함께 recompose됐다. `App()`으로 옮긴 뒤에는 그 값을 `App()` 안에서만 읽어 진입 람다가 recompose되지 않았다. 그래서 로그아웃 상태가 저장되지 않았다(`RestorationUITests.testRestoreSignedOut` 실패, iOS 27.2).
@@ -427,6 +454,24 @@ iOS에서는 탑바 전체가 시스템 `UINavigationBar`다. Compose는 바 아
   - 인터랙티브 pop 중에는 UIKit의 `viewControllers`가 잠시 줄어들지만, `didShow` 전에는 반영하지 않는다. 취소된 스와이프가 상태를 바꾸지 않는 이유다(실측으로 확인).
 - **전환 중 요청**: `transitionCoordinator`가 있으면 적용을 미루고, `didShow`에서 최신 목표를 적용한다.
 - **탭**: `UITabBarControllerDelegate`의 선택은 `onTabSelected`로, Kotlin의 `selectedTab`은 `selectedIndex`로 반영한다. 둘 다 멱등이다.
+
+**탭 위의 공유 화면** (`NativeTabs(sharedBackStack, onSharedBack)`)
+- 어느 탭에서든 여는 화면(프로필, 편집 화면 등)을 백스택 하나에 둔다. 탭 화면 전체를 바깥 `NavDisplay`로 덮던 앱(Hotpot)이 그 백스택을 그대로 쓰게 하려고 만들었다. 비어 있어도 된다.
+- **의미**: 공유 화면은 항상 선택된 탭 위에 있고, 항상 탭 바를 숨긴다(metadata와 무관). 그래서 공유 화면이 보이는 동안 사용자는 탭을 바꿀 수 없다.
+  - 앱이 그동안 `selectedTab`을 바꾸면 공유 화면이 새 탭으로 옮겨 간다. 탭 재탭은 탭 바가 숨겨져 있어 일어나지 않는다.
+  - 공유 화면이 늘 선택된 탭에 붙으므로 상태 복원에 따로 저장할 값이 없다. 백스택은 앱의 `rememberNavBackStack`이 복원한다.
+- **iOS** (`TabsLayout`, `StackCoordinator`)
+  - 선택된 탭의 목표 스택은 그 탭 엔트리 뒤에 공유 엔트리를 붙인 것이다. 나머지 탭에는 붙이지 않는다. diff와 전환은 기존 규칙(Kotlin → UIKit)을 그대로 쓴다.
+  - 공유 화면은 `hidesBottomBarWhenPushed = true`로 만든다(`EntryScreen.shared`).
+  - UIKit이 pop하면 사라진 화면마다 공유 화면은 `onSharedBack`, 탭 화면은 그 탭의 `onBack`을 위에서부터 부른다.
+  - 화면에 보이는 탭만 애니메이션한다. 선택되지 않은 탭이나 이번에 선택이 바뀌는 탭의 스택은 애니메이션 없이 바꾼다. 그래서 앱이 탭을 바꾸면 공유 화면은 이전 탭에서 빠지고 새 탭에 바로 붙는다.
+    - 이전에는 선택되지 않은 탭도 애니메이션으로 바꿨다. 화면 밖이라 보이지 않았고, 진행 중인 전환이 남아 다음 적용이 `didShow`까지 미뤄질 수 있었다.
+  - 옮겨 간 공유 화면은 새 컨트롤러다. 같은 content key를 쓰므로(6.6장 같은 `contentKey`) 이전 탭의 화면이 composition을 떠난 뒤(최대 약 0.5초) 내용이 그려진다. `rememberSaveable`과 ViewModel은 같은 엔트리라 유지된다.
+- **그 밖의 플랫폼**: 블록의 `entries`는 선택된 탭 엔트리 뒤에 공유 엔트리를 붙인 목록이고 `onBack`은 공유 화면이 있으면 `onSharedBack`이다. 그래서 탭용 Material 구성(`NavDisplay(entries)` + 하단 탭)을 그대로 쓸 수 있다. 상세 화면이 탭 바까지 덮으며 들어오게 하려면 `tabEntries`와 `sharedEntries`로 바깥 `NavDisplay`를 따로 그린다.
+- 검증
+  - `StackCoordinatorTest`(iosTest, 실제 `UINavigationController`): 공유 화면이 탭 화면 위에 쌓이고 탭 바를 숨기는지, UIKit pop이 맞는 콜백으로 가는지(탭 재탭 포함), 앱이 공유 화면을 뺄 때 콜백이 없는지 확인한다.
+  - `NativeNavigationScopeTest`: `entries`, `tabEntries`, `sharedEntries`, 제목, `canGoBack`, `tabBarVisible`.
+  - `NavigationUITests.testSharedStack`(실제 터치, iOS 27.2): Home에서 연 Profile이 탭 바를 숨기고, 그 위 Detail 50(짝수지만 탭 바 숨김), 스와이프와 뒤로 버튼으로 돌아온다. Settings에서 다시 연 Profile은 pop 때 정리된 상태(0)로 시작하고, 앱이 Gallery를 고르면 Profile이 `rememberSaveable` 상태(1)를 그대로 가진 채 Gallery로 옮겨 간다.
 
 **루트 전환** (`NativeNavigationViewController.kt`)
 - content는 `NativeStack`이나 `NativeTabs`를 한 번에 하나만 선언한다. 어느 것을 선언할지는 바뀔 수 있다. 예: `if (signedIn) NativeTabs(...) else NativeStack(signInStack, ...)`
@@ -477,13 +522,16 @@ fun App(navigation: AppNavigation = rememberAppNavigation()) {   // rememberNavB
         ),
         selectedTab = navigation.selectedTab,
         onTabSelected = { navigation.selectedTab = it },
-        entryDecorators = rememberAppEntryDecorators(),    // 테마 decorator + saveable + ViewModel
+        entryDecorators = rememberAppEntryDecorators(),    // saveable + ViewModel
         entryProvider = entryProvider,
     ) { MaterialChrome() }                                 // Android/Desktop만: Scaffold + NavDisplay(entries)
 }
 
+// App()의 바깥: 테마는 Android에서 앱 전체를 한 번, iOS에서 각 화면을 감싼다.
+NativeNavigationFrame(frame = { content -> AppTheme(content) }) { /* 위의 NativeTabs / NativeStack */ }
+
 // iosMain                                              // Android: setContent { App() }
-fun MainViewController(restoredState: NSData?) = NativeNavigationViewController(restoredState, stateVersion = 2) { App() }
+fun MainViewController(restoredState: NSData?) = NativeNavigationViewController(restoredState, stateVersion = 3) { App() }
 ```
 
 **남은 일과 한계**
@@ -498,9 +546,8 @@ fun MainViewController(restoredState: NSData?) = NativeNavigationViewController(
 - 호스트 content는 UI를 그리면 안 된다(그리면 예외).
 - 화면 전환 애니메이션은 UIKit 기본값이다. Navigation 3의 transition spec은 iOS에서 쓰지 않는다.
 - 화면 안의 `BackHandler`와 `NavigationBackHandler`는 6.9장에서 다룬다.
-- Hotpot을 공통 `App()` 구조로 옮기면서(2026-11-14, Hotpot worktree `feature/test-cmp-swift-nav`) 앱이 직접 채운 부분이다. 라이브러리로 옮길 후보다.
-  - iOS 호스트에 `LocalDensity`(문자열 리소스가 읽음)와 `LocalUIViewController`(adaptive 알림창을 띄울 루트)를 앱의 `MainViewController`가 제공했다. 호스트 composition이 기본으로 제공할 수 있다.
-  - 화면이 네이티브 화면인지 알려 주는 공개 값이 없다. 그래서 앱이 `LocalNativeChrome`을 만들어 화면별 Compose 상단바를 숨기고, 화면 데코레이터와 앱 틀을 expect/actual로 나눴다.
+- Hotpot을 공통 `App()` 구조로 옮기면서(2026-11-14, Hotpot worktree `feature/test-cmp-swift-nav`) 앱이 직접 채운 부분이다.
+  - 해결함(2026-11-15): 호스트의 `LocalDensity`·`LocalUIViewController`는 라이브러리가 제공한다. 네이티브 화면 여부는 `LocalNativeScreen`, 테마·DI·루트 Scaffold는 `NativeNavigationFrame`으로 준다. Hotpot의 iOS 전용 코드는 `MainViewController` 한 줄(`NativeNavigationViewController { App(rootGraph) }`)만 남았고, expect/actual 3개 파일과 `LocalNativeChrome`을 지웠다.
   - 루트 전환(`NativeStack` ↔ `NativeTabs`)은 Android에서 블록이 통째로 바뀌어 전환 애니메이션이 없다.
     - 앱에서 새 블록을 페이드인해 봤다. 그런데 Main의 첫 구성이 무거운 동안 프레임이 늦어 흰 화면이 4~6초 보였다(에뮬레이터). 그래서 뺐다.
   - Main 위에 올라온 스택(게스트 로그인)의 첫 화면에서 Android 시스템 뒤로가기는 블록의 `NavDisplay`가 받지 않는다(엔트리가 하나뿐). 앱이 `NavigationBackHandler`로 Main에 돌아가게 했다.
@@ -539,6 +586,20 @@ NativeBarItems(
   - 그래서 화면 상태와 무관한 제목은 `nativeScreen(title)`로 선언한다. `NativeBarItems`의 `title`은 화면이 보이는 동안 바뀌는 제목에 쓴다.
   - Hotpot은 iOS 호스트에서 라우트별 제목을 엔트리 metadata로 넣었다. 그 뒤로는 push 첫 프레임부터 큰 제목이 내용과 함께 들어왔다.
   - 버튼(`leading`, `trailing`)도 같은 시점에 등록되므로 전환이 끝난 뒤에 나타날 수 있다.
+- **제목 이미지** (2026-11-15, 시험용. 사용자가 되돌릴 예정이다): `nativeScreen(titleImage = { painterResource(Res.drawable.logo) })`
+  - 로고처럼 제목 글자 대신 이미지를 보일 때 쓴다. `title`은 그대로 둔다. VoiceOver와 위에 push한 화면의 뒤로 버튼이 쓴다.
+  - iOS에서는 `navigationItem.titleView`의 `UIImageView`가 된다(`TitleImage.kt`, `NativeBarApplier`). 접근성 레이블은 제목이고 trait는 header다.
+  - **그리는 곳**: painter 람다는 호스트 composition에서 실행한다(`rememberTitleImages`). 만든 `UIImage`를 content key별로 `TitleImages`에 넣은 뒤 스택을 갱신하므로, push할 화면이 만들어질 때 이미 이미지가 있다.
+    - 화면 composition에서 그리면 늦다. 화면 내용은 push가 시작된 뒤에 composition되므로(6.6장 CMP 동작) 이미지가 전환이 끝난 뒤에 나타난다.
+  - **크기**: 높이 28pt, painter 비율 유지(intrinsic size가 없으면 정사각형). 화면 배율의 비트맵으로 만든다.
+    - painter보다 작게 그릴 때(512px PNG 등) 먼저 목표의 최대 4배 크기로 그린다. 그다음 Core Graphics 고품질 보간으로 줄인다. painter는 bilinear(밉맵 없음)로 줄여서, 크게 줄이면 계단이 생기기 때문이다.
+    - 변환은 Skia(`asSkiaBitmap`, PNG 인코딩) → `UIImage` → `UIGraphicsImageRenderer`다. 엔트리마다 painter가 바뀔 때만 한다.
+  - **한계**
+    - 호스트에는 화면의 테마와 다크 모드가 없다. 다크 모드용 리소스(`drawable-dark`)와 테마 색은 적용되지 않는다.
+    - 높이는 고정이다. 바꾸는 옵션이 없다.
+  - **큰 제목 화면**: 펼쳐진 동안 로고는 위 인라인 줄에, 큰 제목 글자는 그 아래에 함께 나온다. 스크롤해 바가 접히면 인라인 줄에는 제목 글자 대신 로고가 남는다(iOS 27.2 실측). 로고만 보이려면 `largeTitle = false`로 둔다.
+  - **그 밖의 플랫폼**: `NativeNavigationScope.titleImage`로 넘긴다. 예제는 `TopAppBar`의 title 자리에 `Image(painter, Modifier.height(28.dp))`를 그린다(Pixel 7a에서 확인).
+  - XCUITest의 `navigationBars["Profile"]`는 `titleView`가 있어도 그대로 바를 찾는다(`testSharedStack` 통과).
 
 **Android와 Desktop**
 - 라이브러리는 아무것도 그리지 않는다.
@@ -558,10 +619,17 @@ NativeBarItems(
 
 **남은 일과 한계**
 - 같은 `contentKey`를 연속으로 push하면, 새 화면은 이전 화면이 내용을 내려놓은 뒤에야 바 아이템을 등록한다(6.6장). 이 경우에만 툴바가 짧게 사라졌다 나타날 수 있다.
-- Hotpot 실기기에서 뒤로 갈 때 큰 제목과 인라인 제목이 겹쳐 보인 스크린샷이 있었다(2026-11-14).
-  - 시뮬레이터(iOS 27.2)에서는 재현하지 못했다. push, 뒤로 버튼, 빠른·느린·멈춘 가장자리 스와이프, 같은 화면 재진입을 녹화해 내비게이션 바 가운데를 프레임마다 검사했다.
-  - 전환 도중 제목이 바뀌는 것이 가장 유력한 원인이다. 그래서 위의 두 경우(늦게 등록되는 제목, 같은 제목의 반복 설정)를 모두 없앴다.
-  - 실기기 확인이 남았다.
+- 뒤로 갈 때 큰 제목과 인라인 제목이 겹쳐 보이는 현상(Hotpot 실기기, 2026-11-14)은 UIKit 자체 동작이다(2026-11-15 확인).
+  - 조건
+    - 큰 제목 루트를 스크롤해 바가 접혀 있다.
+    - 그 상태에서 큰 제목(펼침) 상세 화면을 push한다.
+    - 가장자리 스와이프로 돌아간다.
+  - 스와이프 도중 바가 큰 제목 높이에서 인라인 높이로 줄어든다. 그래서 떠나는 화면의 큰 제목이 바 윗줄로 올라가 인라인 제목과 겹친다.
+  - Compose와 라이브러리 없이 순수 UIKit으로 같은 구조를 만들어 확인했다. `UITabBarController` + `UINavigationController`, `prefersLargeTitles`, `largeTitleDisplayMode = always`, `setContentScrollView`로 구성했다. iOS 27.2 시뮬레이터에서 스와이프를 멈추고 찍으니 같은 모습이었다.
+  - 상세 화면을 인라인 제목(`nativeScreen(largeTitle = false)`)으로 두면 겹치지 않는다(같은 실험).
+  - 권장: 큰 제목은 스택의 첫 화면(탭 루트)에만 쓰고, push되는 화면은 인라인 제목으로 둔다. 예제가 이미 그렇고, Hotpot도 상세 화면을 인라인으로 바꿨다(2026-11-15). 라이브러리는 metadata 값을 그대로 따르고 강제하지 않는다.
+  - 처음에 재현하지 못한 이유: 루트를 스크롤하지 않은 상태만 봤다. 이번 재현에서는 XCUITest의 `tap()`이 화면 밖 항목을 누르려고 목록을 스크롤해 루트의 바가 접혔다. Hotpot 스크린샷도 설정 목록 아래쪽 항목에서 들어간 경우였다.
+  - 앞서 고친 두 경우(늦게 등록되는 제목, 같은 제목의 반복 설정)는 이 현상의 원인이 아니었다. 다만 전환 중 제목이 늦게 나타나거나 바뀌는 다른 문제를 막으므로 그대로 둔다.
 - 바 버튼에 Compose UI를 넣는 기능(`customView`)은 지원하지 않는다(네이티브가 아님).
 - iOS 26의 `UIBarButtonItem` 그룹과 공유 배경 같은 세부 설정은 노출하지 않는다. 시스템 기본값을 쓴다.
 
@@ -702,6 +770,9 @@ ViewModel은 저장하지 않는다(Android도 프로세스가 죽으면 잃는�
 | 2026-11-14 | proxy의 `contentSize`는 Compose가 끝까지 남은 거리를 알 때 그 값으로 정확히 정한다. `ScrollState`는 항상, 리스트와 그리드는 마지막 아이템이 배치되면 안다. 끝을 넘는 이동은 Compose에 보내지 않는다(6.5장). | `canScrollForward`만 보고 끝에서야 `contentSize`를 줄이면, 바운스 중에 Compose가 끝에서 조금만 떨어져도 크기가 커졌다 줄기를 반복해 UIKit이 offset을 잘라 냈다(Hotpot "바닥에서 끊김", 프레임 추적으로 확인). 남은 거리로 정하면 크기가 Compose 위치와 무관해서 왕복이 없다. 검토한 대안: 끝 근처에서 `canScrollForward` 변화를 무시하는 방식은 끝을 지난 뒤에야 크기를 줄이는 문제(감속 중 잘림)가 그대로 남는다. |
 | 2026-11-14 | 사용자 스크롤을 끌 수 없는 컨테이너는 proxy 스크롤과 함께 쓸 수 없다고 문서화한다(6.5장). 상위 nested scroll로 막는 API는 넣지 않는다. | 실험에서 Compose 드래그 감지가 터치를 가져가 proxy pan이 시작되지 않았고, 리스트가 아예 움직이지 않았다. 동작하지 않는 API는 내보내지 않는다. 앱은 스크롤을 끌 수 있는 컨테이너로 직접 그린다(Hotpot의 라이선스 목록과 설정 화면). |
 | 2026-11-14 | `NativeStack`, `NativeTabs`, `NativeTab`을 commonMain으로 옮긴다. iOS에서는 네이티브 컨트롤러를 선언하고, 다른 플랫폼에서는 앱이 넘긴 마지막 블록(`otherPlatforms`)을 `NativeNavigationScope`(decorated 엔트리, 제목, 바 아이템, 탭)와 함께 실행한다. 앱의 루트 `App()`을 모든 플랫폼이 함께 쓴다(6.6장). | 이전에는 iOS 진입점과 Android `App()`이 백스택 사용, decorator, 탭 구성을 따로 가져 흐름이 갈라졌다. 블록으로 Android의 Material 구성만 남기면, 기존 앱은 `NavDisplay`를 감싸고 iOS 진입점 한 줄만 바꾸면 된다. 라이브러리는 여전히 Android UI를 그리지 않고 `navigation3-ui`·`material3`에 의존하지 않는다(6.2장). 검토한 대안: 라이브러리가 `material3`와 `navigation3-ui`에 의존해 Android 셸까지 그리는 방식은 Material 설정을 모두 API로 다시 노출해야 하고 6.2장과 맞지 않는다. Material 슬롯(`TopAppBar` 등)의 내용을 읽어 iOS 네이티브 바로 옮기는 방식은 Composable 슬롯의 내용을 읽을 수 없어 불가능하다. iOS에서 호스트가 없을 때 블록으로 대신 그리는 방식은 6.4장(대체 경로 없음)에 어긋나므로 예외로 막는다. |
+| 2026-11-15 | 앱의 iOS 전용 코드를 진입점 한 줄로 줄인다. 호스트 composition이 `LocalUIViewController`와 `LocalDensity`를 제공하고, 공개 `LocalNativeScreen`과 `NativeNavigationFrame(providers, frame)`을 둔다(6.6장). | Hotpot에서 앱이 iOS용으로 따로 쓴 코드(호스트 locals, 화면 데코레이터와 앱 틀 expect/actual, 자체 `LocalNativeChrome`, 화면마다 다시 넣는 DI)는 모두 "화면마다 composition이 따로 있다"는 같은 이유였다. 앱이 지금 `NavDisplay`를 감싸는 코드를 그대로 `providers`와 `frame`으로 나눠 넘기면 Android는 지금과 같고 iOS는 화면마다 씌운다. 검토한 대안: 호스트의 CompositionLocal을 화면으로 자동 전달하는 방식은 앱 코드를 더 줄이지만, 화면이 직접 갖는 owner(lifecycle, ViewModel, saved state, density)와 겹치는 key를 골라내야 하고 호스트에서 계산한 값(예: 다크 모드)이 화면과 어긋난다. 그래서 앱이 넘길 범위를 `providers`로 명시하게 했다. |
+| 2026-11-15 | (시험용) 제목 이미지는 `nativeScreen(titleImage = { Painter })`로 받는다. iOS는 호스트 composition에서 painter를 `UIImage`로 그려 `titleView`에 넣는다(6.7장). | 공통 코드에 로고를 한 번만 선언하고, Android는 같은 painter를 그린다. 검토한 대안: iOS 에셋 카탈로그 이름(`UIImage(named:)`)은 다크 모드 변형과 벡터를 iOS가 그대로 처리해 더 네이티브하지만, 로고를 Xcode에 한 번 더 넣어야 하고 Android는 이름을 보고 앱이 그림을 골라야 한다. 사용자가 Compose 리소스 방식으로 시험하기로 했다. 화면 composition에서 그리는 방식은 이미지가 push 전환 뒤에 나타난다. |
+| 2026-11-15 | `NativeTabs`에 탭 위의 공유 화면(`sharedBackStack`, `onSharedBack`)을 둔다. iOS는 선택된 탭의 `UINavigationController`에 이어서 push하고, 공유 화면은 항상 탭 바를 숨긴다. 앱이 탭을 바꾸면 공유 화면이 새 탭으로 옮겨 간다(6.6장). | 탭 화면 전체를 바깥 `NavDisplay`로 덮는 앱(Hotpot)은 상세 라우트를 탭마다 따로 쌓도록 내비게이션을 다시 짜야 했다(약 1,000줄). 공유 백스택이면 원래 백스택과 이동 코드를 그대로 쓴다. 탭 바를 항상 숨기면 "공유 화면이 보이는 중 사용자의 탭 전환"이 생기지 않아 의미가 단순하다. 검토한 대안: 탭 바를 보이게 두고 탭 전환 때 공유 화면을 비우거나 남기는 방식은 사용자가 보는 결과를 예측하기 어렵다. 중첩 선언(공유 스택의 루트 엔트리 안에 `NativeTabs`)은 iOS에서 화면 composition 안에 탭 컨트롤러를 두어야 해 6.6장 구조와 맞지 않는다. iOS 관례(탭마다 독립 스택)와 다르지만, 탭 바를 가리는 화면에서는 사용자 눈에 차이가 없다. |
 
 ## 8. 작업 흐름과 검증
 

@@ -8,6 +8,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.uikit.LocalUIViewController
+import androidx.compose.ui.unit.Density
 import androidx.navigation3.runtime.NavEntry
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -19,6 +22,7 @@ import platform.Foundation.create
 import platform.posix.memcpy
 import platform.UIKit.UIColor
 import platform.UIKit.UIImage
+import platform.UIKit.UIScreen
 import platform.UIKit.UINavigationController
 import platform.UIKit.UITabBarController
 import platform.UIKit.UITabBarControllerDelegateProtocol
@@ -141,7 +145,7 @@ private fun NSData.toByteArray(): ByteArray {
 }
 
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-private fun ByteArray.toNSData(): NSData =
+internal fun ByteArray.toNSData(): NSData =
     if (isEmpty()) NSData() else usePinned { NSData.create(bytes = it.addressOf(0), length = size.toULong()) }
 
 /**
@@ -153,7 +157,11 @@ private class RootNavigationHost(private val root: NativeNavigationRootControlle
     override fun Stack(entries: List<NavEntry<*>>, onBack: () -> Unit) {
         val declaration = rememberRootDeclaration(root)
         val currentOnBack by rememberUpdatedState(onBack)
-        SideEffect { root.updateStack(declaration, entries) { currentOnBack() } }
+        val titleImages = rememberTitleImages(entries)
+        SideEffect {
+            root.titleImages.update(titleImages)
+            root.updateStack(declaration, entries) { currentOnBack() }
+        }
     }
 
     @Composable
@@ -162,10 +170,15 @@ private class RootNavigationHost(private val root: NativeNavigationRootControlle
         entriesPerTab: List<List<NavEntry<*>>>,
         selectedTab: Int,
         onTabSelected: (Int) -> Unit,
+        sharedEntries: List<NavEntry<*>>,
+        onSharedBack: () -> Unit,
     ) {
         val declaration = rememberRootDeclaration(root)
         val currentOnTabSelected by rememberUpdatedState(onTabSelected)
+        val currentOnSharedBack by rememberUpdatedState(onSharedBack)
+        val titleImages = rememberTitleImages(entriesPerTab.flatten() + sharedEntries)
         SideEffect {
+            root.titleImages.update(titleImages)
             root.updateTabs(
                 declaration = declaration,
                 tabs = tabs.mapIndexed { index, tab ->
@@ -173,6 +186,7 @@ private class RootNavigationHost(private val root: NativeNavigationRootControlle
                 },
                 selectedTab = selectedTab,
                 onTabSelected = { currentOnTabSelected(it) },
+                shared = SharedState(sharedEntries) { currentOnSharedBack() },
             )
         }
     }
@@ -202,6 +216,12 @@ internal class TabState(
     val onBack: () -> Unit,
 )
 
+/** [NativeTabs]' shared screens: pushed on the selected tab, above its own screens. */
+internal class SharedState(
+    val entries: List<NavEntry<*>>,
+    val onBack: () -> Unit,
+)
+
 internal class NativeNavigationRootController(
     content: @Composable () -> Unit,
     restoredState: Map<String, Any?>?,
@@ -209,9 +229,17 @@ internal class NativeNavigationRootController(
 ) : UIViewController(nibName = null, bundle = null) {
 
     private val leases = ContentLeases()
+    val titleImages = TitleImages()
     private val navigationHost = RootNavigationHost(this)
     private val hostContent: @Composable () -> Unit = {
-        CompositionLocalProvider(LocalNativeNavigationHost provides navigationHost) { content() }
+        CompositionLocalProvider(
+            LocalNativeNavigationHost provides navigationHost,
+            // The composition has no screen. Alerts it shows (e.g. adaptive dialogs presenting a
+            // UIAlertController) present from the root controller, and resources read the
+            // density (string and image resource qualifiers).
+            LocalUIViewController provides this,
+            LocalDensity provides Density(mainScreenScale()),
+        ) { content() }
     }
     private val restoring = restoredState != null
     private var host = HostComposition(hostContent, restoredState)
@@ -290,16 +318,22 @@ internal class NativeNavigationRootController(
         if (current != null && current.declaration === declaration) {
             current.update(entries, onBack)
         } else {
-            show(StackLayout(declaration, leases).also { it.update(entries, onBack) })
+            show(StackLayout(declaration, leases, titleImages).also { it.update(entries, onBack) })
         }
     }
 
-    fun updateTabs(declaration: Any, tabs: List<TabState>, selectedTab: Int, onTabSelected: (Int) -> Unit) {
+    fun updateTabs(
+        declaration: Any,
+        tabs: List<TabState>,
+        selectedTab: Int,
+        onTabSelected: (Int) -> Unit,
+        shared: SharedState,
+    ) {
         val current = layout as? TabsLayout
         if (current != null && current.declaration === declaration) {
-            current.update(tabs, selectedTab, onTabSelected)
+            current.update(tabs, selectedTab, onTabSelected, shared)
         } else {
-            show(TabsLayout(declaration, leases).also { it.update(tabs, selectedTab, onTabSelected) })
+            show(TabsLayout(declaration, leases, titleImages).also { it.update(tabs, selectedTab, onTabSelected, shared) })
         }
     }
 
@@ -350,6 +384,9 @@ internal class NativeNavigationRootController(
     }
 }
 
+@OptIn(ExperimentalForeignApi::class)
+private fun mainScreenScale(): Float = UIScreen.mainScreen.scale.toFloat()
+
 /** Duration of the cross-dissolve when the root hierarchy is replaced (UIKit's default). */
 private const val ROOT_TRANSITION_DURATION = 0.3
 
@@ -362,8 +399,12 @@ private sealed interface RootLayout {
     fun dispose()
 }
 
-private class StackLayout(override val declaration: Any, leases: ContentLeases) : RootLayout {
-    private val stack = StackCoordinator(UINavigationController(), leases)
+private class StackLayout(
+    override val declaration: Any,
+    leases: ContentLeases,
+    titleImages: TitleImages,
+) : RootLayout {
+    private val stack = StackCoordinator(UINavigationController(), leases, titleImages)
     override val controller: UIViewController get() = stack.navigationController
 
     fun update(entries: List<NavEntry<*>>, onBack: () -> Unit) = stack.update(entries, onBack)
@@ -371,7 +412,11 @@ private class StackLayout(override val declaration: Any, leases: ContentLeases) 
     override fun dispose() = stack.dispose()
 }
 
-private class TabsLayout(override val declaration: Any, private val leases: ContentLeases) : RootLayout {
+private class TabsLayout(
+    override val declaration: Any,
+    private val leases: ContentLeases,
+    private val titleImages: TitleImages,
+) : RootLayout {
     private val tabBarController = UITabBarController()
     override val controller: UIViewController get() = tabBarController
 
@@ -394,11 +439,11 @@ private class TabsLayout(override val declaration: Any, private val leases: Cont
         tabBarController.delegate = delegate
     }
 
-    fun update(tabs: List<TabState>, selectedTab: Int, onTabSelected: (Int) -> Unit) {
+    fun update(tabs: List<TabState>, selectedTab: Int, onTabSelected: (Int) -> Unit, shared: SharedState) {
         this.onTabSelected = onTabSelected
         if (stacks.size != tabs.size) {
             stacks.forEach { it.dispose() }
-            stacks = tabs.map { StackCoordinator(UINavigationController(), leases) }
+            stacks = tabs.map { StackCoordinator(UINavigationController(), leases, titleImages) }
             tabBarController.setViewControllers(stacks.map { it.navigationController }, animated = false)
             items = emptyList()
         }
@@ -413,8 +458,21 @@ private class TabsLayout(override val declaration: Any, private val leases: Cont
             }
             items = newItems
         }
-        tabs.forEachIndexed { index, tab -> stacks[index].update(tab.entries, tab.onBack) }
-        if (selectedTab in tabs.indices && tabBarController.selectedIndex.toInt() != selectedTab) {
+        // The shared screens sit on the selected tab. Only a tab that stays on screen animates:
+        // when the app selects another tab while shared screens are shown, they leave the
+        // previous tab and appear on the new one without a push or pop animation.
+        val showing = tabBarController.selectedIndex.toInt()
+        val selected = if (selectedTab in tabs.indices) selectedTab else showing
+        tabs.forEachIndexed { index, tab ->
+            stacks[index].update(
+                entries = tab.entries,
+                onBack = tab.onBack,
+                shared = if (index == selected) shared.entries else emptyList(),
+                onSharedBack = shared.onBack,
+                animated = index == selected && index == showing,
+            )
+        }
+        if (selectedTab in tabs.indices && showing != selectedTab) {
             tabBarController.selectedIndex = selectedTab.toULong()
         }
     }

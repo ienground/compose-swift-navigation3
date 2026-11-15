@@ -1,5 +1,7 @@
 package zone.ien.navigation
 
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavMetadataKey
 import androidx.navigation3.runtime.get
@@ -23,20 +25,30 @@ import androidx.navigation3.runtime.metadata
  * @param title navigation bar title.
  * @param largeTitle show the large title (collapsing with the scroll) instead of an inline title.
  * @param hidesTabBar hide the tab bar while this screen is pushed (`hidesBottomBarWhenPushed`).
+ * @param titleImage an image shown in the navigation bar in place of the title text, e.g. the
+ *   app's logo: `{ painterResource(Res.drawable.logo) }`. Keep [title]: it still names the screen
+ *   for VoiceOver and for the back button of the screen pushed above.
+ *   - iOS: the navigation item's `titleView`, 28pt high with the painter's aspect ratio. The
+ *     lambda runs once in the navigation host, outside every screen, so the image is ready for
+ *     the push transition; the screen's theme and dark mode do not reach it.
+ *   - Other platforms: [NativeNavigationScope.titleImage], for the app's own top app bar.
  */
 public fun nativeScreen(
     title: String? = null,
     largeTitle: Boolean = false,
     hidesTabBar: Boolean = false,
+    titleImage: (@Composable () -> Painter)? = null,
 ): Map<String, Any> = metadata {
     if (title != null) put(NativeTitle, title)
     put(NativeLargeTitle, largeTitle)
     put(NativeHidesTabBar, hidesTabBar)
+    if (titleImage != null) put(NativeTitleImage, titleImage)
 }
 
 public val NavEntry<*>.nativeTitle: String? get() = metadata[NativeTitle]
 public val NavEntry<*>.nativeLargeTitle: Boolean get() = metadata[NativeLargeTitle] ?: false
 public val NavEntry<*>.nativeHidesTabBar: Boolean get() = metadata[NativeHidesTabBar] ?: false
+public val NavEntry<*>.nativeTitleImage: (@Composable () -> Painter)? get() = metadata[NativeTitleImage]
 
 // Metadata maps are keyed by toString(): keep the names namespaced.
 private object NativeTitle : NavMetadataKey<String> {
@@ -49,4 +61,8 @@ private object NativeLargeTitle : NavMetadataKey<Boolean> {
 
 private object NativeHidesTabBar : NavMetadataKey<Boolean> {
     override fun toString(): String = "zone.ien.navigation.hidesTabBar"
+}
+
+private object NativeTitleImage : NavMetadataKey<@Composable () -> Painter> {
+    override fun toString(): String = "zone.ien.navigation.titleImage"
 }

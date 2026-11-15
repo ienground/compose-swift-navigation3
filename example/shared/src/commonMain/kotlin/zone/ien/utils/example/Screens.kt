@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -95,10 +96,16 @@ fun HomeScreen(navigation: AppNavigation) {
             }
         }
         item {
-            Button(
-                onClick = { navigation.deepLink(0, DetailRoute(3), DetailRoute(7)) },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            ) { Text("Deep link 3 > 7") }
+            Row {
+                Button(
+                    onClick = { navigation.deepLink(0, DetailRoute(3), DetailRoute(7)) },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                ) { Text("Deep link 3 > 7") }
+                Button(
+                    onClick = { navigation.openShared(ProfileRoute) },
+                    modifier = Modifier.padding(vertical = 8.dp),
+                ) { Text("Open profile") }
+            }
         }
         items(rows, key = { it }) { index ->
             Text(
@@ -314,8 +321,35 @@ fun SettingsScreen(navigation: AppNavigation) {
             onBackCompleted = {},
         )
         Button(onClick = { guardRoot = !guardRoot }) { Text(if (guardRoot) "Root guard: on" else "Root guard: off") }
+        Button(onClick = { navigation.openShared(ProfileRoute) }) { Text("Open profile from settings") }
         // Replaces the tabs with the sign-in stack (on iOS: the root tab bar controller is swapped).
         Button(onClick = navigation::signOut) { Text("Sign out") }
+    }
+}
+
+/**
+ * A shared screen: any tab opens it over itself (NativeTabs' shared back stack). The tab bar is
+ * hidden while it is shown; on iOS it is pushed on the selected tab's navigation controller.
+ */
+@Composable
+fun ProfileScreen(navigation: AppNavigation) {
+    LogComposition("Profile")
+    var edits by rememberSaveable { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(nativeContentPadding())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Profile edits: $edits")
+        Button(onClick = { edits++ }) { Text("Edit profile") }
+        // Pushes on the shared stack too (AppNavigation.open uses it while a shared screen is shown).
+        Button(onClick = { navigation.open(DetailRoute(50)) }) { Text("Open Detail 50") }
+        // The app selects another tab: the shared screens move to it.
+        Button(onClick = { navigation.selectedTab = 1 }) { Text("Switch to Gallery") }
+        Button(onClick = navigation::closeShared) { Text("Close profile") }
     }
 }
 
