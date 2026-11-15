@@ -7,7 +7,7 @@ On iOS, the library connects your Kotlin back stacks to real `UITabBarController
 
 Routes, back stacks, entry providers, screens, ViewModels, and the root `App()` stay in common code. The library is implemented in Kotlin; it requires no Swift navigation layer.
 
-> Early development, version `0.0.0`. Maven Central metadata was not available when checked on 2026-11-15; use the source or local Maven installation below.
+> The first prerelease version is `1.0.0-alpha01`. Until it is published to Maven Central, use the source or local Maven installation below.
 
 <a id="toc"></a>
 
@@ -70,13 +70,21 @@ dependencyResolutionManagement {
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("zone.ien.navigation:navigation:0.0.0")
+            implementation("zone.ien.navigation:navigation:1.0.0-alpha01")
         }
     }
 }
 ```
 
 Alternatively, include the existing `library` module in your build and use a project dependency, as the [example module](example/shared/build.gradle.kts) does.
+
+Once published to Maven Central, the same dependency works with `google()` and `mavenCentral()` alone, without `mavenLocal()`.
+
+### Automated publishing
+
+The [publishing workflow](.github/workflows/publish.yml) runs when a GitHub Release or prerelease is published. Its tag must match `lib-version-name` in `gradle/libs.versions.toml` (first tag: `v1.0.0-alpha01`). After the full CI passes for the same release commit, it signs all library targets, uploads them to Maven Central, and automatically releases them.
+
+Configure the same Actions Secrets as compose-hig: `SONATYPE_USERNAME`, `SONATYPE_PASSWORD` (Central Portal token), `GPG_KEY` (ASCII-armored private key), and `GPG_PASSWORD` (key passphrase). The Central Portal account must have permission to publish `zone.ien.navigation`, and the signing public key must be available on a key server. The workflow does not print secret values.
 
 Your app also needs:
 

@@ -74,9 +74,14 @@ kotlin {
 }
 
 mavenPublishing {
-    publishToMavenCentral()
+    publishToMavenCentral(automaticRelease = true)
 
-    signAllPublications()
+    val isPublishingToMavenLocal = gradle.startParameter.taskNames.any {
+        it.contains("publishToMavenLocal", ignoreCase = true)
+    }
+    if (!isPublishingToMavenLocal) {
+        signAllPublications()
+    }
 
     coordinates(group.toString(), "navigation", version.toString())
 

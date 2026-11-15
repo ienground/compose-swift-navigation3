@@ -831,7 +831,9 @@ iOS 26 이상 시뮬레이터와 iOS 18.x(18.2 이상) 시뮬레이터에서 각
 - 커밋, 푸시, PR 생성은 사용자가 요청할 때만 한다.
 - 파일을 만들거나 고친 뒤에는 `git add .`로 스테이징한다(커밋은 하지 않는다).
 - `local.properties`, `xcuserdata`, `.kotlin`, `build`는 gitignore 대상이다. 커밋하지 않는다.
-- `publish.yml`은 GitHub Release가 생성될 때 `:library`를 Maven Central에 배포한다. 서명과 배포 secret은 건드리지 않는다.
+- 첫 프리릴리스 버전은 `1.0.0-alpha01`이며 `gradle/libs.versions.toml`에서 관리한다.
+- `publish.yml`은 GitHub Release·프리릴리스 공개(`published`) 시 같은 커밋의 CI 전체를 실행하고, 통과하면 `:library`를 서명해 Maven Central에 업로드·자동 공개한다. 태그는 `v<lib-version-name>`과 일치해야 한다.
+- 배포 Secret 이름은 compose-hig와 같은 `SONATYPE_USERNAME`, `SONATYPE_PASSWORD`, `GPG_KEY`, `GPG_PASSWORD`다. 실제 Secret 값은 변경하지 않는다. 로컬 Maven 배포는 서명 없이 실행한다.
 
 ## 10. 참고 자료
 

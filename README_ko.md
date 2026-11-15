@@ -7,7 +7,7 @@ iOS에서는 Kotlin 백스택을 실제 `UITabBarController`와 `UINavigationCon
 
 라우트, 백스택, 엔트리 제공자, 화면, ViewModel, 루트 `App()`은 공통 코드에 둡니다. 라이브러리는 Kotlin으로 구현되어 별도의 Swift 내비게이션 계층이 필요 없습니다.
 
-> 초기 개발 단계이며 버전은 `0.0.0`입니다. 2026-11-15 확인 시 Maven Central 메타데이터가 없었습니다. 아래 소스 또는 로컬 Maven 설치 방법을 사용하세요.
+> 첫 프리릴리스 버전은 `1.0.0-alpha01`입니다. Maven Central 공개 전에는 아래 소스 또는 로컬 Maven 설치 방법을 사용하세요.
 
 <a id="toc"></a>
 
@@ -70,13 +70,21 @@ dependencyResolutionManagement {
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("zone.ien.navigation:navigation:0.0.0")
+            implementation("zone.ien.navigation:navigation:1.0.0-alpha01")
         }
     }
 }
 ```
 
 또는 [예제 모듈](example/shared/build.gradle.kts)처럼 기존 `library` 모듈을 빌드에 포함하고 프로젝트 의존성으로 사용합니다.
+
+Maven Central에 공개된 뒤에는 `mavenLocal()` 없이 `google()`과 `mavenCentral()`만으로 같은 의존성을 사용할 수 있습니다.
+
+### 자동 배포
+
+[배포 워크플로](.github/workflows/publish.yml)는 GitHub Release 또는 프리릴리스를 공개할 때 실행됩니다. `gradle/libs.versions.toml`의 `lib-version-name`과 태그가 일치해야 합니다(첫 태그: `v1.0.0-alpha01`). 같은 릴리스 커밋의 CI 전체가 통과하면 모든 라이브러리 타깃을 서명하고 Maven Central에 업로드한 뒤 자동 공개합니다.
+
+저장소의 Actions Secrets에 compose-hig와 같은 `SONATYPE_USERNAME`, `SONATYPE_PASSWORD`(Central Portal 토큰), `GPG_KEY`(ASCII 형식의 비밀키), `GPG_PASSWORD`(키 암호)를 등록해야 합니다. Central Portal 계정에는 `zone.ien.navigation` 배포 권한이 있어야 하며, 서명 공개키도 키 서버에 등록되어 있어야 합니다. 워크플로는 Secret 값을 출력하지 않습니다.
 
 앱에는 다음 설정도 필요합니다.
 
