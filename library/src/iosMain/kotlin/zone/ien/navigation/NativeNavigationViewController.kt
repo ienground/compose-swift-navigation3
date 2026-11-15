@@ -127,12 +127,12 @@ private fun decodeState(data: NSData, expectedVersion: Int): Map<String, Any?>? 
             saved[STATE] as? Map<String, Any?>
         }
         else -> {
-            NSLog("compose-swift-navigation3: ignoring navigation state of version $version (expected $expectedVersion)")
+            NSLog("zone.ien.navigation: ignoring navigation state of version $version (expected $expectedVersion)")
             null
         }
     }
 } catch (error: IllegalArgumentException) {
-    NSLog("compose-swift-navigation3: ignoring unreadable navigation state (${error.message})")
+    NSLog("zone.ien.navigation: ignoring unreadable navigation state (${error.message})")
     null
 }
 
@@ -255,12 +255,12 @@ internal class NativeNavigationRootController(
         val dropped = mutableListOf<String>()
         val state = mapOf(STATE_VERSION to stateVersion, STATE to SavedStateCodec.prune(host.saveState(), dropped))
         if (dropped.isNotEmpty()) {
-            NSLog("compose-swift-navigation3: not saving rememberSaveable values that cannot be persisted: $dropped")
+            NSLog("zone.ien.navigation: not saving rememberSaveable values that cannot be persisted: $dropped")
         }
         return try {
             SavedStateCodec.encode(state).encodeToByteArray().toNSData()
         } catch (error: IllegalArgumentException) {
-            NSLog("compose-swift-navigation3: navigation state not saved (${error.message})")
+            NSLog("zone.ien.navigation: navigation state not saved (${error.message})")
             null
         }
     }
@@ -284,7 +284,7 @@ internal class NativeNavigationRootController(
         } catch (error: Exception) {
             if (!restoring) throw error
             NSLog(
-                "compose-swift-navigation3: restored navigation state does not fit this app version, starting fresh ($error)"
+                "zone.ien.navigation: restored navigation state does not fit this app version, starting fresh ($error)"
                     .replace("%", "%%"),
             )
             runCatching { host.dispose() }

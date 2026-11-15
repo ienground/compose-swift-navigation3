@@ -42,7 +42,7 @@
 - 공통 선언: `NativeStack`/`NativeTabs`를 commonMain에 두고, 앱의 루트 `App()` 하나를 모든 플랫폼이 쓴다(6.6장)
 - 탭 위의 공유 화면: 어느 탭에서든 여는 화면을 `NativeTabs(sharedBackStack)` 하나로 둔다(6.6장)
 
-- `:library` (패키지 `zone.ien.navigation`, Maven 좌표 `zone.ien.navigation:compose-swift-navigation3:<version>`)
+- `:library` (패키지 `zone.ien.navigation`, Maven 좌표 `zone.ien.navigation:navigation:<version>`)
   - commonMain 공개 API
     - 스크롤 연동: `rememberNativeScroll(state, background)`, `NativeScroll`, `nativeContentPadding`, `Modifier.nativeScrollExclusion()`
     - 화면 메타데이터: `nativeScreen(...)`(제목 이미지 `titleImage` 포함), 그리고 메타데이터를 읽는 `NavEntry.nativeTitle` 등
@@ -744,8 +744,8 @@ ViewModel은 저장하지 않는다(Android도 프로세스가 죽으면 잃는�
 
 | 날짜 | 결정 | 이유 / 대안 |
 | --- | --- | --- |
-| 2026-11-13 | 라이브러리 이름을 `compose-swift-navigation3`로 한다. `rootProject.name`과 Maven artifactId에 쓴다. | 저장소 이름과 같다. |
-| 2026-11-13 | group, 소스 패키지, Android namespace를 모두 `zone.ien.navigation`으로 한다. | Maven 좌표는 `zone.ien.navigation:compose-swift-navigation3`이다. |
+| 2026-11-13 | 라이브러리 이름을 `compose-swift-navigation3`로 한다. `rootProject.name`과 Maven artifactId에 쓴다. (아래 2026-11-15 결정으로 artifactId가 바뀜) | 저장소 이름과 같다. |
+| 2026-11-13 | group, 소스 패키지, Android namespace를 모두 `zone.ien.navigation`으로 한다. | Maven 좌표는 `zone.ien.navigation:navigation`이다(2026-11-15에 artifactId 변경). |
 | 2026-11-13 | 최소 지원 iOS 버전은 18.2다. | 예제 앱의 기존 Deployment Target과 같다. iOS 18 UIKit API(`UITab`, `UITabGroup`)를 쓸 수 있다. |
 | 2026-11-13 | OS 버전 분기를 두지 않는다. iOS 18.2에서 쓸 수 있는 API만 사용한다. | 코드 경로가 하나라 버전별 동작 차이와 검증 부담이 없다. Liquid Glass는 시스템이 자동 적용하므로 분기 없이도 iOS 26 요구사항을 충족한다. 대신 탭 바 최소화, `bottomAccessory` 같은 iOS 26 전용 기능은 제공하지 않는다. |
 | 2026-11-13 | iOS 구현은 UIKit(`UITabBarController` + 탭별 `UINavigationController`)으로 하고, `iosMain`의 Kotlin/Native로만 제어한다. 라이브러리에 Swift 코드를 두지 않는다. | klib 하나로 배포되고 사용자가 Swift를 추가할 필요가 없다. Kotlin 백스택을 주인으로 두는 구조와 바로 맞는다. 네이티브 동작과 Liquid Glass는 SwiftUI와 같다. 대안이었던 SwiftUI(`TabView` + `NavigationStack`)는 Swift 코드를 복사하거나 별도로 배포해야 하고, 그 이점인 iOS 26 전용 modifier는 버전 분기를 두지 않아 쓰지 않는다. 비용: 백스택 diff와 인터랙티브 pop 처리를 직접 구현해야 한다. 상세 내용은 6.1장. |
@@ -773,6 +773,7 @@ ViewModel은 저장하지 않는다(Android도 프로세스가 죽으면 잃는�
 | 2026-11-15 | 앱의 iOS 전용 코드를 진입점 한 줄로 줄인다. 호스트 composition이 `LocalUIViewController`와 `LocalDensity`를 제공하고, 공개 `LocalNativeScreen`과 `NativeNavigationFrame(providers, frame)`을 둔다(6.6장). | Hotpot에서 앱이 iOS용으로 따로 쓴 코드(호스트 locals, 화면 데코레이터와 앱 틀 expect/actual, 자체 `LocalNativeChrome`, 화면마다 다시 넣는 DI)는 모두 "화면마다 composition이 따로 있다"는 같은 이유였다. 앱이 지금 `NavDisplay`를 감싸는 코드를 그대로 `providers`와 `frame`으로 나눠 넘기면 Android는 지금과 같고 iOS는 화면마다 씌운다. 검토한 대안: 호스트의 CompositionLocal을 화면으로 자동 전달하는 방식은 앱 코드를 더 줄이지만, 화면이 직접 갖는 owner(lifecycle, ViewModel, saved state, density)와 겹치는 key를 골라내야 하고 호스트에서 계산한 값(예: 다크 모드)이 화면과 어긋난다. 그래서 앱이 넘길 범위를 `providers`로 명시하게 했다. |
 | 2026-11-15 | (시험용) 제목 이미지는 `nativeScreen(titleImage = { Painter })`로 받는다. iOS는 호스트 composition에서 painter를 `UIImage`로 그려 `titleView`에 넣는다(6.7장). | 공통 코드에 로고를 한 번만 선언하고, Android는 같은 painter를 그린다. 검토한 대안: iOS 에셋 카탈로그 이름(`UIImage(named:)`)은 다크 모드 변형과 벡터를 iOS가 그대로 처리해 더 네이티브하지만, 로고를 Xcode에 한 번 더 넣어야 하고 Android는 이름을 보고 앱이 그림을 골라야 한다. 사용자가 Compose 리소스 방식으로 시험하기로 했다. 화면 composition에서 그리는 방식은 이미지가 push 전환 뒤에 나타난다. |
 | 2026-11-15 | `NativeTabs`에 탭 위의 공유 화면(`sharedBackStack`, `onSharedBack`)을 둔다. iOS는 선택된 탭의 `UINavigationController`에 이어서 push하고, 공유 화면은 항상 탭 바를 숨긴다. 앱이 탭을 바꾸면 공유 화면이 새 탭으로 옮겨 간다(6.6장). | 탭 화면 전체를 바깥 `NavDisplay`로 덮는 앱(Hotpot)은 상세 라우트를 탭마다 따로 쌓도록 내비게이션을 다시 짜야 했다(약 1,000줄). 공유 백스택이면 원래 백스택과 이동 코드를 그대로 쓴다. 탭 바를 항상 숨기면 "공유 화면이 보이는 중 사용자의 탭 전환"이 생기지 않아 의미가 단순하다. 검토한 대안: 탭 바를 보이게 두고 탭 전환 때 공유 화면을 비우거나 남기는 방식은 사용자가 보는 결과를 예측하기 어렵다. 중첩 선언(공유 스택의 루트 엔트리 안에 `NativeTabs`)은 iOS에서 화면 composition 안에 탭 컨트롤러를 두어야 해 6.6장 구조와 맞지 않는다. iOS 관례(탭마다 독립 스택)와 다르지만, 탭 바를 가리는 화면에서는 사용자 눈에 차이가 없다. |
+| 2026-11-15 | Maven artifactId를 `navigation`으로 줄인다. 좌표는 `zone.ien.navigation:navigation`이다. POM `name`과 iOS 로그 접두어(`zone.ien.navigation:`)도 맞춘다. `rootProject.name`, GitHub 저장소 이름과 URL, README 제목은 `compose-swift-navigation3`로 둔다. | 사용자 요청: 의존성 선언에 쓰기에 이름이 너무 길다. group이 이미 라이브러리를 구분하므로 artifactId는 짧아도 된다. 저장소 이름은 바꾸지 않았으므로 저장소를 가리키는 값은 그대로 둔다. mavenLocal로 받는 앱(Hotpot)은 버전 카탈로그의 `name`을 바꿔야 한다. |
 
 ## 8. 작업 흐름과 검증
 

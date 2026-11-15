@@ -78,10 +78,10 @@ mavenPublishing {
 
     signAllPublications()
 
-    coordinates(group.toString(), "compose-swift-navigation3", version.toString())
+    coordinates(group.toString(), "navigation", version.toString())
 
     pom {
-        name = "compose-swift-navigation3"
+        name = "navigation"
         description = "Native iOS navigation (UIKit) for Compose Multiplatform Navigation 3 apps."
         inceptionYear = "2026"
         url = "https://github.com/ienground/compose-swift-navigation3"
