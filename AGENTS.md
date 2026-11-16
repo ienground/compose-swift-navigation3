@@ -242,6 +242,15 @@ python3 -I example/iosUITests/timeline.py build/ui-tests/<UDID>               # 
   - iOS 27.2(iPhone 18 Pro): 15개 모두 통과했다(`SearchUITests` 포함). iOS 18.x는 실행하지 않았다.
   - Gradle: `jvmTest`, `testAndroidHostTest`, `iosSimulatorArm64Test`(라이브러리 83개, 새 `titleImageComesFromTheTopEntryMetadata` 포함), 예제 Android·Desktop 빌드가 통과했다. `jsTest`, `wasmJsTest`는 실행하지 않았다.
   - Android 예제(Pixel 7a): Home의 Material 탑바 제목 자리에 로고가 나오는 것을 화면으로 확인했다.
+- 2026-11-16 탭 바 숨김을 `UITabBarController.setTabBarHidden`으로 옮기고 push의 전환 준비 뒤에 적용했다. `hidesBottomBarWhenPushed`가 이전 화면의 큰 제목을 먼저 접던 문제를 피한다.
+  - iOS 27.2(iPhone 17): Navigation UI 테스트 4개와 탭 전환 후 스크롤 유지 테스트 1개가 통과했다. 새 `testTabBarVisibilityDuringCancelledPop`은 스와이프 취소 후 숨김 유지와 완료 후 탭 바 복원을 확인한다.
+  - iOS 18.5(iPhone 16): Navigation UI 테스트 4개가 모두 통과했다.
+  - Gradle: `jvmTest`, `testAndroidHostTest`, 라이브러리 `iosSimulatorArm64Test`(99개, `StackCoordinatorTest` 13개 포함), 예제 Android·Desktop 빌드가 통과했다.
+  - Hotpot: iOS 27.2(iPhone 18 Pro)에서 설정 → 타이머 알림 → 뒤로가기 UI 테스트가 통과했다. 녹화에서 이전 설정 largeTitle이 크기를 유지한 채 왼쪽으로 이동하는 것을 확인했다. 실기기 실행은 하지 않았다.
+- 2026-11-16 바 버튼·메뉴에 `Painter` 이미지를 추가했다.
+  - 라이브러리: JVM·Android host·JS·Wasm 테스트 각각 65개와 iOS 시뮬레이터 테스트 105개가 통과했다. 기존 생성자 호환성, 이미지 교체·재사용, 비율과 크기, 메뉴 이미지, 컨트롤러 해제를 확인한다.
+  - iOS 27.2(iPhone 17)와 iOS 18.5(iPhone 16): `BarItemsUITests`가 통과했다. PNG 버튼, `ImageVector` 버튼·툴바, 벡터 리소스 메뉴의 실제 터치를 확인한다.
+  - 예제 Android·Desktop 빌드가 통과했다. iPhone 18 Pro 시뮬레이터와 Pixel 7a에서 최신 예제를 실행해 이미지 표시를 확인했다. PNG 검증용 투명 배경 리소스 `example_bar_icon.png`를 예제에 추가했다.
 - 모든 테스트는 `-freshStart`로 시작해 복원된 상태를 무시한다. 복원 테스트만 두 번째 실행에서 이 인자를 뺀다.
 
 ## 6. 아키텍처 방향
@@ -272,7 +281,7 @@ iOS 내비게이션은 **UIKit `UITabBarController`와 탭마다 하나씩 둔 `
 
 **UIKit 구현 지침**
 - 화면은 엔트리마다 `ComposeUIViewController`를 하나씩 두고, 엔트리 고유 키와 컨트롤러를 매핑해 재사용한다.
-- 상세 화면의 탭 바 숨김은 `hidesBottomBarWhenPushed`로 처리한다. 이 값은 push하기 전에 설정해야 한다.
+- 상세 화면의 탭 바 숨김은 iOS 18부터 제공되는 `UITabBarController.setTabBarHidden(_:animated:)`로 처리한다. `hidesBottomBarWhenPushed`는 push 시작 때 이전 화면의 큰 제목을 먼저 접으므로 쓰지 않는다. push의 전환 준비가 끝난 뒤 해당 화면까지의 스택을 기준으로 숨김 상태를 적용하고, 스와이프가 취소되면 다시 나타나는 화면이 상태를 복원한다.
 - 타이틀은 `navigationItem.title`, toolbar는 `navigationItem`의 bar button item 또는 `toolbarItems`로 구성한다. 버튼 동작은 selector 대신 `UIAction` 클로저로 연결한다.
 - 네이티브에서 시작된 pop(뒤로 버튼, 스와이프)은 `UINavigationControllerDelegate`의 `navigationController(_:didShow:animated:)`에서 감지한다. 인터랙티브 전환은 `transitionCoordinator`로 완료 여부를 확인한다.
 - 최소 지원 버전이 18.2이므로 iOS 18에서 추가된 UIKit API(`UITab`, `UITabGroup`, `UITabBarController.tabs`)는 쓸 수 있다.
@@ -360,7 +369,7 @@ iOS에서는 탑바 전체가 시스템 `UINavigationBar`다. Compose는 바 아
     - `ScrollState`는 처음부터 안다(`maxValue - value`).
     - 리스트와 그리드는 마지막 아이템이 배치되면 안다(마지막 아이템 끝 + `afterContentPadding` − `viewportEndOffset`). staggered 그리드는 아이템을 가장 짧은 줄에 넣으므로, 마지막 아이템이 배치되면 그보다 아래에서 시작하는 아이템이 없다.
     - 끝을 모르는 동안은 `contentSize`를 넉넉히(화면 3배 이상) 두고 줄이지 않는다.
-    - 끝을 넘는 이동(바운스)은 Compose에 보내지 않는다. 바운스는 화면 뷰만 움직이고 Compose는 끝에 그대로 있다.
+    - 끝을 넘는 이동(바운스)은 Compose에 보내지 않는다. 바운스는 `NativeScrollContent`로 감싼 Scaffold 콘텐츠 영역만 움직이고, 화면 루트와 고정 바는 뷰포트에 유지한다. Compose 스크롤 위치는 끝에 그대로 있다.
   - 이전 방식은 `canScrollForward == false`가 된 프레임에야 `contentSize`를 실제 끝으로 줄였다. 2026-11-14 Hotpot에서 "바닥에서 끊긴다"는 보고가 있어 프레임 추적 로그로 확인했다.
     - 바운스가 되돌아오는 동안 Compose가 끝에서 2pt쯤 떨어지면 `canScrollForward`가 다시 `true`가 되어 `contentSize`가 커졌다.
     - 다음 프레임에 다시 줄면서 UIKit이 offset을 한 번에 잘라 냈다(약 77pt). 바운스가 도중에 끊겼다.
@@ -422,7 +431,7 @@ iOS에서는 탑바 전체가 시스템 `UINavigationBar`다. Compose는 바 아
   - 화면이 스택에서 제거되면 내용을 composition에서 내린다.
     - 앱이 애니메이션으로 pop하면 전환이 끝난 뒤에 내린다(`StackCoordinator.retire`). `NavDisplay`가 나가는 엔트리를 애니메이션 동안 그리는 것과 같다.
     - window를 떠난 화면의 composition은 다시 그려지지 않는다. 그래서 내용을 내리라는 상태 변경은 CMP가 그 scene을 dispose할 때(아래 CMP 동작, 최대 약 0.5초) 실제로 반영된다.
-- **화면 메타데이터**: `nativeScreen(title, largeTitle, hidesTabBar, titleImage)`를 엔트리 metadata에 넣는다. 그러면 `navigationItem.title`, `largeTitleDisplayMode`, `hidesBottomBarWhenPushed`(push 전에 설정), `titleView`(6.7장 제목 이미지)가 적용된다. 키별로 다른 값이 필요하면 `entry<K>(metadata = { key -> ... })`를 쓴다.
+- **화면 메타데이터**: `nativeScreen(title, largeTitle, hidesTabBar, titleImage)`를 엔트리 metadata에 넣는다. 그러면 `navigationItem.title`, `largeTitleDisplayMode`, 탭 바 숨김 상태, `titleView`(6.7장 제목 이미지)가 적용된다. 키별로 다른 값이 필요하면 `entry<K>(metadata = { key -> ... })`를 쓴다.
   - 제목은 push 전에 정해져야 전환과 함께 보인다. 화면 상태와 무관한 제목은 metadata로 선언한다(6.7장 제목의 적용 시점).
 
 **공통 선언** (commonMain `NativeNavigation.kt`)
@@ -462,7 +471,7 @@ iOS에서는 탑바 전체가 시스템 `UINavigationBar`다. Compose는 바 아
   - 공유 화면이 늘 선택된 탭에 붙으므로 상태 복원에 따로 저장할 값이 없다. 백스택은 앱의 `rememberNavBackStack`이 복원한다.
 - **iOS** (`TabsLayout`, `StackCoordinator`)
   - 선택된 탭의 목표 스택은 그 탭 엔트리 뒤에 공유 엔트리를 붙인 것이다. 나머지 탭에는 붙이지 않는다. diff와 전환은 기존 규칙(Kotlin → UIKit)을 그대로 쓴다.
-  - 공유 화면은 `hidesBottomBarWhenPushed = true`로 만든다(`EntryScreen.shared`).
+  - 공유 화면은 `EntryScreen.shared`로 탭 바 숨김을 요청한다. `StackCoordinator`가 push 직후 `UITabBarController.setTabBarHidden`으로 적용한다. 네이티브 pop·탭 전환에서는 화면의 `viewWillAppear` 다음 메인 큐에서 적용한다.
   - UIKit이 pop하면 사라진 화면마다 공유 화면은 `onSharedBack`, 탭 화면은 그 탭의 `onBack`을 위에서부터 부른다.
   - 화면에 보이는 탭만 애니메이션한다. 선택되지 않은 탭이나 이번에 선택이 바뀌는 탭의 스택은 애니메이션 없이 바꾼다. 그래서 앱이 탭을 바꾸면 공유 화면은 이전 탭에서 빠지고 새 탭에 바로 붙는다.
     - 이전에는 선택되지 않은 탭도 애니메이션으로 바꿨다. 화면 밖이라 보이지 않았고, 진행 중인 전환이 남아 다음 적용이 `didShow`까지 미뤄질 수 있었다.
@@ -586,6 +595,11 @@ NativeBarItems(
   - 그래서 화면 상태와 무관한 제목은 `nativeScreen(title)`로 선언한다. `NativeBarItems`의 `title`은 화면이 보이는 동안 바뀌는 제목에 쓴다.
   - Hotpot은 iOS 호스트에서 라우트별 제목을 엔트리 metadata로 넣었다. 그 뒤로는 push 첫 프레임부터 큰 제목이 내용과 함께 들어왔다.
   - 버튼(`leading`, `trailing`)도 같은 시점에 등록되므로 전환이 끝난 뒤에 나타날 수 있다.
+- **바 버튼·메뉴 이미지** (2026-11-16): `NativeBarButton(image: Painter?)`, `NativeMenuAction(image: Painter?)`에 Compose 리소스나 `rememberVectorPainter`를 전달한다. 이미지가 있으면 `systemImage`보다 우선한다.
+  - 기존 생성자는 보조 생성자로 유지해 위치 인수·기본 인수·마지막 클릭 람다 호출을 보존한다.
+  - `TitleImage.kt`의 `renderNativeImage`를 제목 이미지와 함께 재사용한다. 버튼 이미지는 비율을 유지해 최대 22×22pt로 만들고 UIKit template 이미지로 네이티브 tint를 적용한다.
+  - `NativeBarApplier`는 현재 바에 쓰이는 Painter의 변환 결과만 보관한다. 같은 Painter를 쓰면 이미지와 버튼을 재사용하고, 다른 Painter로 바꾸면 갱신한다. 동일 Painter 내부의 프레임 애니메이션은 지원하지 않는다.
+  - 예제 Home의 PNG, Detail의 `ImageVector` 버튼·툴바, 메뉴의 벡터 리소스로 확인한다. Android·Desktop 예제도 `button.image`를 그린다.
 - **제목 이미지** (2026-11-15, 시험용. 사용자가 되돌릴 예정이다): `nativeScreen(titleImage = { painterResource(Res.drawable.logo) })`
   - 로고처럼 제목 글자 대신 이미지를 보일 때 쓴다. `title`은 그대로 둔다. VoiceOver와 위에 push한 화면의 뒤로 버튼이 쓴다.
   - iOS에서는 `navigationItem.titleView`의 `UIImageView`가 된다(`TitleImage.kt`, `NativeBarApplier`). 접근성 레이블은 제목이고 trait는 header다.
@@ -750,7 +764,7 @@ ViewModel은 저장하지 않는다(Android도 프로세스가 죽으면 잃는�
 | 2026-11-13 | OS 버전 분기를 두지 않는다. iOS 18.2에서 쓸 수 있는 API만 사용한다. | 코드 경로가 하나라 버전별 동작 차이와 검증 부담이 없다. Liquid Glass는 시스템이 자동 적용하므로 분기 없이도 iOS 26 요구사항을 충족한다. 대신 탭 바 최소화, `bottomAccessory` 같은 iOS 26 전용 기능은 제공하지 않는다. |
 | 2026-11-13 | iOS 구현은 UIKit(`UITabBarController` + 탭별 `UINavigationController`)으로 하고, `iosMain`의 Kotlin/Native로만 제어한다. 라이브러리에 Swift 코드를 두지 않는다. | klib 하나로 배포되고 사용자가 Swift를 추가할 필요가 없다. Kotlin 백스택을 주인으로 두는 구조와 바로 맞는다. 네이티브 동작과 Liquid Glass는 SwiftUI와 같다. 대안이었던 SwiftUI(`TabView` + `NavigationStack`)는 Swift 코드를 복사하거나 별도로 배포해야 하고, 그 이점인 iOS 26 전용 modifier는 버전 분기를 두지 않아 쓰지 않는다. 비용: 백스택 diff와 인터랙티브 pop 처리를 직접 구현해야 한다. 상세 내용은 6.1장. |
 | 2026-11-13 | iOS에서 화면의 주 세로 스크롤은 proxy `UIScrollView`가 소유하고, Compose 리스트는 그 offset을 따라간다(6.5장). | 큰 타이틀이 손가락을 따라 접히는 동작은 실제 pan 제스처가 있어야 일어난다. 대안인 프로그램 offset 동기화와 드래그 상태 위장은 실험에서 실패했다. 비용: iOS에서는 주 리스트의 스크롤 물리가 Compose가 아니라 UIKit이 되고, 화면이 스크롤 상태를 라이브러리에 연결해야 한다. |
-| 2026-11-13 | 스크롤 연동 공개 API는 `rememberNativeScroll(state)`가 돌려주는 `NativeScroll(userScrollEnabled, contentPadding)`다. 화면은 이 두 값을 자기 리스트에 넘긴다. | 화면 코드는 한 번만 작성하고, Android에서는 아무 일도 하지 않는다. 대안이었던 라이브러리 전용 `LazyColumn` 래퍼는 Compose 리스트 API 전체를 다시 노출해야 하고 Grid나 `verticalScroll`로 확장하기 어렵다. |
+| 2026-11-13 | 스크롤 연동 공개 API는 `rememberNativeScroll(state)`가 돌려주는 `NativeScroll(userScrollEnabled, contentPadding)`다. 화면은 이 두 값을 자기 리스트에 넘긴다. 바운스는 공통 Scaffold의 콘텐츠를 `NativeScrollContent`로 한 번 감싸 처리한다. | 화면 코드는 한 번만 작성하고, Android에서는 아무 일도 하지 않는다. 대안이었던 라이브러리 전용 `LazyColumn` 래퍼는 Compose 리스트 API 전체를 다시 노출해야 하고 Grid나 `verticalScroll`로 확장하기 어렵다. |
 | 2026-11-13 | 라이브러리의 웹 타깃은 브라우저 전용이다. | Compose UI의 Skiko 런타임은 Node.js에서 불러올 수 없어 `wasmJsNodeTest`가 실패했다. |
 | 2026-11-13 | iOS의 Navigation 3 상태는 UI 없는 호스트 composition(자체 Recomposer)이 소유한다. 엔트리는 화면별 `ComposeUIViewController`에서 그린다. | 화면마다 composition이 따로 있어도 decorator의 정리 시점이 소스상 보장된다. 대안이었던 숨긴 Compose 뷰는 크기가 0일 때 재구성이 계속되는지 보장할 수 없었다. 단일 composition 안에 UIKit 내비게이션을 interop으로 넣는 방식은 interop 제약 때문에 택하지 않았다. |
 | 2026-11-13 | 네이티브 pop은 사라진 화면 수만큼 `onBack()`을 호출해 Kotlin에 반영한다. API 모양은 `NavDisplay`와 맞춘다. | 기존 Navigation 3 코드의 `onBack`과 back stack을 그대로 쓴다. 대안이었던 "백스택 직접 수정"은 앱의 내비게이터 로직을 우회한다. |
@@ -773,6 +787,8 @@ ViewModel은 저장하지 않는다(Android도 프로세스가 죽으면 잃는�
 | 2026-11-15 | 앱의 iOS 전용 코드를 진입점 한 줄로 줄인다. 호스트 composition이 `LocalUIViewController`와 `LocalDensity`를 제공하고, 공개 `LocalNativeScreen`과 `NativeNavigationFrame(providers, frame)`을 둔다(6.6장). | Hotpot에서 앱이 iOS용으로 따로 쓴 코드(호스트 locals, 화면 데코레이터와 앱 틀 expect/actual, 자체 `LocalNativeChrome`, 화면마다 다시 넣는 DI)는 모두 "화면마다 composition이 따로 있다"는 같은 이유였다. 앱이 지금 `NavDisplay`를 감싸는 코드를 그대로 `providers`와 `frame`으로 나눠 넘기면 Android는 지금과 같고 iOS는 화면마다 씌운다. 검토한 대안: 호스트의 CompositionLocal을 화면으로 자동 전달하는 방식은 앱 코드를 더 줄이지만, 화면이 직접 갖는 owner(lifecycle, ViewModel, saved state, density)와 겹치는 key를 골라내야 하고 호스트에서 계산한 값(예: 다크 모드)이 화면과 어긋난다. 그래서 앱이 넘길 범위를 `providers`로 명시하게 했다. |
 | 2026-11-15 | (시험용) 제목 이미지는 `nativeScreen(titleImage = { Painter })`로 받는다. iOS는 호스트 composition에서 painter를 `UIImage`로 그려 `titleView`에 넣는다(6.7장). | 공통 코드에 로고를 한 번만 선언하고, Android는 같은 painter를 그린다. 검토한 대안: iOS 에셋 카탈로그 이름(`UIImage(named:)`)은 다크 모드 변형과 벡터를 iOS가 그대로 처리해 더 네이티브하지만, 로고를 Xcode에 한 번 더 넣어야 하고 Android는 이름을 보고 앱이 그림을 골라야 한다. 사용자가 Compose 리소스 방식으로 시험하기로 했다. 화면 composition에서 그리는 방식은 이미지가 push 전환 뒤에 나타난다. |
 | 2026-11-15 | `NativeTabs`에 탭 위의 공유 화면(`sharedBackStack`, `onSharedBack`)을 둔다. iOS는 선택된 탭의 `UINavigationController`에 이어서 push하고, 공유 화면은 항상 탭 바를 숨긴다. 앱이 탭을 바꾸면 공유 화면이 새 탭으로 옮겨 간다(6.6장). | 탭 화면 전체를 바깥 `NavDisplay`로 덮는 앱(Hotpot)은 상세 라우트를 탭마다 따로 쌓도록 내비게이션을 다시 짜야 했다(약 1,000줄). 공유 백스택이면 원래 백스택과 이동 코드를 그대로 쓴다. 탭 바를 항상 숨기면 "공유 화면이 보이는 중 사용자의 탭 전환"이 생기지 않아 의미가 단순하다. 검토한 대안: 탭 바를 보이게 두고 탭 전환 때 공유 화면을 비우거나 남기는 방식은 사용자가 보는 결과를 예측하기 어렵다. 중첩 선언(공유 스택의 루트 엔트리 안에 `NativeTabs`)은 iOS에서 화면 composition 안에 탭 컨트롤러를 두어야 해 6.6장 구조와 맞지 않는다. iOS 관례(탭마다 독립 스택)와 다르지만, 탭 바를 가리는 화면에서는 사용자 눈에 차이가 없다. |
+| 2026-11-16 | 바 버튼과 메뉴는 `image: Painter?`로 사용자 이미지를 받는다. | 공통 코드의 PNG·벡터 리소스와 `ImageVector`를 재사용하면서 실제 UIKit 버튼·메뉴를 유지한다. 제목 이미지의 변환기를 함께 쓰고, 최대 22×22pt의 template 이미지로 네이티브 tint를 적용한다. 기존 생성자는 유지한다. |
+| 2026-11-16 | 탭 바 숨김은 `hidesBottomBarWhenPushed` 대신 `UITabBarController.setTabBarHidden(_:animated:)`로 적용한다. | 순수 UIKit 비교에서 탭 바를 함께 숨기는 push만 이전 큰 제목이 먼저 작은 제목으로 접혔다. 탭 바를 유지하거나 push의 전환 준비가 끝난 뒤 별도 시스템 API로 숨기면 큰 제목이 가로 전환과 함께 유지됐다. `viewWillAppear` 안에서 즉시 숨겨도 접힘이 재현되어, 앱의 push 직후 또는 다음 메인 큐에서 적용한다. API는 iOS 18부터 지원하므로 버전 분기가 필요 없다. 숨긴 화면 위의 스택에서도 숨김을 유지하고, pop·스와이프 취소 때 나타나는 화면이 상태를 복원한다. |
 | 2026-11-15 | Maven artifactId를 `navigation`으로 줄인다. 좌표는 `zone.ien.navigation:navigation`이다. POM `name`과 iOS 로그 접두어(`zone.ien.navigation:`)도 맞춘다. `rootProject.name`, GitHub 저장소 이름과 URL, README 제목은 `compose-swift-navigation3`로 둔다. | 사용자 요청: 의존성 선언에 쓰기에 이름이 너무 길다. group이 이미 라이브러리를 구분하므로 artifactId는 짧아도 된다. 저장소 이름은 바꾸지 않았으므로 저장소를 가리키는 값은 그대로 둔다. mavenLocal로 받는 앱(Hotpot)은 버전 카탈로그의 `name`을 바꿔야 한다. |
 
 ## 8. 작업 흐름과 검증

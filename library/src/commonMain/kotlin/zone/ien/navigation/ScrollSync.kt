@@ -60,7 +60,7 @@ internal class ScrollSync {
     /**
      * The native scroll view moved. Returns the delta Compose has to scroll by to follow it
      * (0 if it already matches). Overscroll past either end is not forwarded: the native bounce
-     * moves the whole Compose view instead, and Compose stays exactly at its end.
+     * moves only the connected Compose scroll container instead, and Compose stays exactly at its end.
      */
     fun deltaForNativeOffset(nativeOffsetY: Double, topInset: Double): Double {
         var desired = max(0.0, nativeOffsetY + topInset)
@@ -119,12 +119,8 @@ internal class ScrollSync {
         fun maxOffsetY(contentHeight: Double, viewport: Double, topInset: Double, bottomInset: Double): Double =
             max(-topInset, contentHeight + bottomInset - viewport)
 
-        /**
-         * Where the Compose view sits in native content coordinates: on the viewport in the
-         * normal range (Compose renders the scroll), at the edge during rubber-band overscroll
-         * (so the content visibly bounces with it).
-         */
-        fun pinnedOffsetY(nativeOffsetY: Double, topInset: Double, maxOffsetY: Double): Double =
-            min(max(nativeOffsetY, -topInset), maxOffsetY)
+        /** 스크롤 끝을 넘은 거리만 콘텐츠의 바운스 이동량으로 반환합니다. */
+        fun overscrollOffsetY(nativeOffsetY: Double, topInset: Double, maxOffsetY: Double): Double =
+            min(max(nativeOffsetY, -topInset), maxOffsetY) - nativeOffsetY
     }
 }

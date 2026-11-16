@@ -35,6 +35,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import org.jetbrains.compose.resources.painterResource
+import zone.ien.utils.example.resources.Res
+import zone.ien.utils.example.resources.example_bar_icon
+import zone.ien.utils.example.resources.compose_multiplatform
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -67,7 +75,7 @@ fun HomeScreen(navigation: AppNavigation) {
     val listState = rememberLazyListState()
     val nativeScroll = rememberNativeScroll(listState, background = MaterialTheme.colorScheme.background)
     NativeBarItems(
-        trailing = listOf(NativeBarButton("Open 42", systemImage = "42.circle") { navigation.open(DetailRoute(42)) }),
+        trailing = listOf(NativeBarButton("Open 42", systemImage = "42.circle", image = painterResource(Res.drawable.example_bar_icon)) { navigation.open(DetailRoute(42)) }),
     )
     // Native search field (UISearchController on iOS); the screen filters its own rows.
     var query by rememberSaveable { mutableStateOf("") }
@@ -153,11 +161,13 @@ fun DetailScreen(id: Int, navigation: AppNavigation) {
     val scrollState = rememberScrollState()
     val nativeScroll = rememberNativeScroll(scrollState, background = MaterialTheme.colorScheme.background)
 
+    val addImage = rememberVectorPainter(AddImage)
+
     // Native bar items follow the ViewModel: dynamic title, menu, toolbar with a disabled state.
     NativeBarItems(
         title = if (viewModel.count > 0) "Detail $id (${viewModel.count})" else null,
         trailing = listOf(
-            NativeBarButton("Add one", systemImage = "plus", onClick = viewModel::increment),
+            NativeBarButton("Add one", image = addImage, onClick = viewModel::increment),
             NativeBarButton(
                 title = "More",
                 systemImage = "ellipsis.circle",
@@ -165,7 +175,7 @@ fun DetailScreen(id: Int, navigation: AppNavigation) {
                     NativeMenuAction("Open Detail ${id + 1}", systemImage = "arrow.right") {
                         navigation.open(DetailRoute(id + 1))
                     },
-                    NativeMenuAction("Reset count", systemImage = "arrow.counterclockwise", destructive = true) {
+                    NativeMenuAction("Reset count", image = painterResource(Res.drawable.compose_multiplatform), destructive = true) {
                         viewModel.reset()
                     },
                 ),
@@ -173,7 +183,7 @@ fun DetailScreen(id: Int, navigation: AppNavigation) {
         ),
         toolbar = listOf(
             NativeBarButton("Decrease", systemImage = "minus.circle", enabled = viewModel.count > 0, onClick = viewModel::decrement),
-            NativeBarButton("Increase", systemImage = "plus.circle", onClick = viewModel::increment),
+            NativeBarButton("Increase", image = addImage, onClick = viewModel::increment),
         ),
     )
 
@@ -412,3 +422,27 @@ internal operator fun PaddingValues.plus(other: PaddingValues): PaddingValues {
             first.calculateBottomPadding() + other.calculateBottomPadding()
     }
 }
+
+private val AddImage = ImageVector.Builder(
+    name = "Add",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).apply {
+    path(fill = SolidColor(Color.Black)) {
+        moveTo(11f, 3f)
+        lineTo(13f, 3f)
+        lineTo(13f, 11f)
+        lineTo(21f, 11f)
+        lineTo(21f, 13f)
+        lineTo(13f, 13f)
+        lineTo(13f, 21f)
+        lineTo(11f, 21f)
+        lineTo(11f, 13f)
+        lineTo(3f, 13f)
+        lineTo(3f, 11f)
+        lineTo(11f, 11f)
+        close()
+    }
+}.build()

@@ -7,10 +7,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -34,6 +36,7 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import zone.ien.navigation.NativeBarButton
+import zone.ien.navigation.NativeScrollContent
 import zone.ien.navigation.NativeNavigationFrame
 import zone.ien.navigation.NativeNavigationScope
 import zone.ien.navigation.NativeStack
@@ -53,7 +56,7 @@ fun App(navigation: AppNavigation = rememberAppNavigation()) {
     val entryProvider = remember(navigation) { appEntryProvider(navigation) }
 
     // The theme wraps the app once on Android/desktop and each native screen on iOS.
-    NativeNavigationFrame(frame = { content -> AppTheme(content) }) {
+    NativeNavigationFrame(frame = { content -> AppTheme { NativeScrollContent { content() } } }) {
         AppNavigationDeclaration(navigation, entryProvider)
     }
 }
@@ -166,17 +169,27 @@ private fun NativeNavigationScope<NavKey>.MaterialChrome() {
 /** Material rendering of a NativeBarButton (the app's choice; the library draws no Android UI). */
 @Composable
 private fun BarActionButton(button: NativeBarButton) {
+    @Composable
+    fun Label() {
+        val image = button.image
+        if (image != null) Icon(image, contentDescription = button.title, modifier = Modifier.size(22.dp))
+        else Text(text = button.title)
+    }
     if (button.menu.isEmpty()) {
-        TextButton(onClick = button.onClick, enabled = button.enabled) { Text(button.title) }
+        TextButton(onClick = button.onClick, enabled = button.enabled) { Label() }
         return
     }
     var expanded by remember { mutableStateOf(false) }
     Box {
-        TextButton(onClick = { expanded = true }, enabled = button.enabled) { Text(button.title) }
+        TextButton(onClick = { expanded = true }, enabled = button.enabled) { Label() }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             button.menu.forEach { action ->
+                val image = action.image
                 DropdownMenuItem(
                     text = { Text(action.title) },
+                    leadingIcon = if (image == null) null else {
+                        { Icon(image, contentDescription = null, modifier = Modifier.size(22.dp)) }
+                    },
                     onClick = {
                         expanded = false
                         action.onClick()

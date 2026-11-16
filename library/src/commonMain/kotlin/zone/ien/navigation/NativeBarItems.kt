@@ -9,12 +9,14 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.painter.Painter
 
 /**
  * A button of the navigation bar or the bottom toolbar.
  *
- * @param title label; with [systemImage] it is the accessibility label.
+ * @param title label; with [systemImage] or [image] it is the accessibility label.
  * @param systemImage SF Symbol name shown on iOS instead of the title.
+ * @param image 사용자 이미지. 지정하면 [systemImage]보다 우선하며, iOS에서는 네이티브 tint를 적용한다.
  * @param menu when not empty, tapping the button opens this menu (`UIMenu` on iOS) and
  *   [onClick] is not used.
  */
@@ -24,17 +26,40 @@ public class NativeBarButton(
     public val systemImage: String? = null,
     public val enabled: Boolean = true,
     public val menu: List<NativeMenuAction> = emptyList(),
+    public val image: Painter? = null,
     public val onClick: () -> Unit = {},
-)
+) {
+    /** 기존 생성자의 위치 인수와 기본 인수 호출을 유지한다. */
+    public constructor(
+        title: String,
+        systemImage: String? = null,
+        enabled: Boolean = true,
+        menu: List<NativeMenuAction> = emptyList(),
+        onClick: () -> Unit = {},
+    ) : this(title, systemImage, enabled, menu, image = null, onClick = onClick)
+}
 
-/** An action of a [NativeBarButton.menu]. */
+/**
+ * An action of a [NativeBarButton.menu].
+ *
+ * @param image 사용자 이미지. 지정하면 [systemImage]보다 우선하며, iOS에서는 네이티브 tint를 적용한다.
+ */
 @Immutable
 public class NativeMenuAction(
     public val title: String,
     public val systemImage: String? = null,
     public val destructive: Boolean = false,
+    public val image: Painter? = null,
     public val onClick: () -> Unit,
-)
+) {
+    /** 기존 생성자의 위치 인수와 기본 인수 호출을 유지한다. */
+    public constructor(
+        title: String,
+        systemImage: String? = null,
+        destructive: Boolean = false,
+        onClick: () -> Unit,
+    ) : this(title, systemImage, destructive, image = null, onClick = onClick)
+}
 
 /** Everything one screen declared with [NativeBarItems]. */
 @Immutable
@@ -180,10 +205,11 @@ internal data class BarShape(
         val title: String,
         val systemImage: String?,
         val enabled: Boolean,
+        val image: Painter?,
         val menu: List<MenuShape>,
     )
 
-    data class MenuShape(val title: String, val systemImage: String?, val destructive: Boolean)
+    data class MenuShape(val title: String, val systemImage: String?, val destructive: Boolean, val image: Painter?)
 
     companion object {
         val Empty = BarShape(emptyList(), emptyList(), emptyList())
@@ -197,7 +223,8 @@ internal fun NativeBarContent?.shape(): BarShape {
             title = button.title,
             systemImage = button.systemImage,
             enabled = button.enabled,
-            menu = button.menu.map { BarShape.MenuShape(it.title, it.systemImage, it.destructive) },
+            image = button.image,
+            menu = button.menu.map { BarShape.MenuShape(it.title, it.systemImage, it.destructive, it.image) },
         )
     }
     return BarShape(leading.shapes(), trailing.shapes(), toolbar.shapes())

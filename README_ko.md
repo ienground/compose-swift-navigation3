@@ -362,7 +362,7 @@ entry<Detail>(metadata = { key -> nativeScreen(title = "Detail ${key.id}", hides
 | --- | --- | --- |
 | `title` | `null` | `navigationItem.title`. 고정 제목은 push 시작 전에 설정 |
 | `largeTitle` | `false` | 스크롤에 따라 접히는 큰 제목. 스택 루트에서만 사용 권장 |
-| `hidesTabBar` | `false` | `hidesBottomBarWhenPushed`. 그 위로 push한 화면에서도 탭 바 숨김 유지 |
+| `hidesTabBar` | `false` | `UITabBarController`에서 숨김. 그 위로 push한 화면에서도 숨김 유지 |
 | `titleImage` | `null` | `@Composable () -> Painter`를 종횡비를 유지한 높이 28pt `titleView`로 표시 |
 
 로고는 기존 Compose 리소스로 `nativeScreen(title = "Home", titleImage = { painterResource(Res.drawable.logo) })`처럼 지정합니다. VoiceOver와 다음 화면의 뒤로 버튼을 위해 `title`을 유지합니다. iOS에서는 push 전에 호스트에서 painter를 실행하므로 화면 테마 색과 다크 모드 리소스가 적용되지 않습니다. 다른 플랫폼은 null 여부를 확인한 뒤 `Image(image(), contentDescription = title, modifier = Modifier.height(28.dp))`처럼 `titleImage`를 직접 그립니다. 제목 이미지는 이 프로젝트에서 시험 중인 기능입니다.
@@ -430,6 +430,20 @@ NativeBarItems(
 
 - `leading`과 `trailing`은 왼쪽에서 오른쪽 순서의 `UIBarButtonItem`이 되며 네이티브 뒤로 버튼은 유지합니다. `menu`가 비어 있지 않으면 버튼의 `onClick` 대신 `UIMenu`를 열고 액션은 `destructive`를 지원합니다.
 - `toolbar`는 해당 화면이 맨 위일 때만 보입니다. `enabled`로 활성 여부를 제어하고, `systemImage`는 SF Symbol, `title`은 접근성 레이블로 사용합니다. 네이티브 버튼은 모양이 바뀔 때만 다시 만듭니다.
+- `NativeBarButton`과 `NativeMenuAction`은 `image: Painter?`도 받습니다. PNG·벡터 리소스는 `painterResource(...)`, `ImageVector`는 `rememberVectorPainter(...)`로 전달합니다. `image`가 `systemImage`보다 우선합니다. iOS는 비율을 유지해 최대 22×22pt로 맞추고 이미지의 알파 모양에 네이티브 tint를 적용합니다. 다른 플랫폼은 렌더러에서 `button.image`를 그릴 수 있습니다. 기존 생성자와 마지막 클릭 람다 호출도 유지됩니다.
+
+```kotlin
+NativeBarButton(
+    title = "사용자 액션",
+    image = painterResource(Res.drawable.my_icon),
+) { performAction() }
+
+NativeMenuAction(
+    title = "벡터 액션",
+    image = rememberVectorPainter(myImageVector),
+) { performAction() }
+```
+
 - 화면 선언은 내용이 composition된 뒤 등록되어 push 시작보다 늦습니다. 전환과 함께 보여야 하는 고정 제목은 `nativeScreen(title)`, 상태에 따른 변경은 `NativeBarItems(title)`을 사용합니다.
 
 검색어와 필터링은 앱이 소유합니다.

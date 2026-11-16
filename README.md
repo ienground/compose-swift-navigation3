@@ -362,7 +362,7 @@ entry<Detail>(metadata = { key -> nativeScreen(title = "Detail ${key.id}", hides
 | --- | --- | --- |
 | `title` | `null` | `navigationItem.title`; set static titles before push starts |
 | `largeTitle` | `false` | A large title that collapses with scrolling; prefer it only on stack roots |
-| `hidesTabBar` | `false` | `hidesBottomBarWhenPushed`; screens pushed above it also keep the bar hidden |
+| `hidesTabBar` | `false` | Uses `UITabBarController`; screens pushed above it also keep the bar hidden |
 | `titleImage` | `null` | A `@Composable () -> Painter` rendered as a 28pt-high `titleView` with its aspect ratio |
 
 For a logo, use `nativeScreen(title = "Home", titleImage = { painterResource(Res.drawable.logo) })` with your existing Compose resource. Keep `title` for VoiceOver and the next screen's back button. On iOS the painter runs in the host before push, outside the screen's theme; screen theme colors and dark-mode resources are not applied. Other platforms render `titleImage` themselves, for example `Image(image(), contentDescription = title, modifier = Modifier.height(28.dp))` after checking the lambda is non-null. Title images are an experimental feature in this project.
@@ -430,6 +430,20 @@ NativeBarItems(
 
 - `leading` and `trailing` become `UIBarButtonItem`s in left-to-right order, keeping the native back button. Non-empty `menu` opens a `UIMenu` instead of calling the button's `onClick`; actions support `destructive`.
 - `toolbar` appears only while this screen is on top. `enabled` controls button availability; `systemImage` selects an SF Symbol and `title` supplies its accessibility label. Native buttons are recreated only when their appearance changes.
+- `NativeBarButton` and `NativeMenuAction` also accept `image: Painter?`. Pass `painterResource(...)` for PNG/vector resources or `rememberVectorPainter(...)` for an `ImageVector`. `image` takes precedence over `systemImage`. iOS fits the image within 22×22pt, preserves its aspect ratio, and applies the native tint to its alpha mask. Other platforms can draw `button.image` in their own renderer. The existing constructors and trailing click lambdas remain supported.
+
+```kotlin
+NativeBarButton(
+    title = "Custom action",
+    image = painterResource(Res.drawable.my_icon),
+) { performAction() }
+
+NativeMenuAction(
+    title = "Vector action",
+    image = rememberVectorPainter(myImageVector),
+) { performAction() }
+```
+
 - Screen declarations are registered after content composes, which is already after push starts. Use `nativeScreen(title)` for static titles that must animate with push; reserve `NativeBarItems(title)` for state-dependent updates.
 
 Search keeps the query and filtering in your app:

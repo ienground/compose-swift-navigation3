@@ -163,12 +163,12 @@ class ScrollSyncTest {
     }
 
     @Test
-    fun pinnedViewFollowsViewportAndStopsAtEdges() {
+    fun contentBouncesOnlyOutsideNativeScrollRange() {
         val maxOffset = 1000.0
-        assertEquals(200.0, ScrollSync.pinnedOffsetY(200.0, top, maxOffset))
-        // Pulled down past the top: the view stays at the top edge and visibly moves down.
-        assertEquals(-top, ScrollSync.pinnedOffsetY(-top - 60, top, maxOffset))
-        // Pulled up past the end: the view stays at the end edge and visibly moves up.
-        assertEquals(maxOffset, ScrollSync.pinnedOffsetY(maxOffset + 40, top, maxOffset))
+        assertEquals(60.0, ScrollSync.overscrollOffsetY(-top - 60, top, maxOffset))
+        assertEquals(0.0, ScrollSync.overscrollOffsetY(-top, top, maxOffset))
+        assertEquals(0.0, ScrollSync.overscrollOffsetY(200.0, top, maxOffset))
+        assertEquals(0.0, ScrollSync.overscrollOffsetY(maxOffset, top, maxOffset))
+        assertEquals(-40.0, ScrollSync.overscrollOffsetY(maxOffset + 40, top, maxOffset))
     }
 }

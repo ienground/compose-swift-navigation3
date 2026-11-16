@@ -18,6 +18,9 @@ import platform.UIKit.didMoveToParentViewController
 import platform.UIKit.hidesBottomBarWhenPushed
 import platform.UIKit.navigationController
 import platform.UIKit.navigationItem
+import platform.UIKit.tabBarController
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_main_queue
 
 /**
  * A view controller that shows Compose [content] as one screen of a `UINavigationController`.
@@ -45,6 +48,25 @@ internal class ComposeScreenController(
     val bar = NativeBarApplier(this)
     val backHandling = NativeBackHandling(this)
     private val keyboardInset = KeyboardInset(proxy.scrollView)
+
+    /** 엔트리의 탭 바 숨김 요청. UINavigationController의 제목 전환과 별도로 적용한다. */
+    var hidesTabBar: Boolean = false
+
+    fun updateTabBarVisibility(animated: Boolean, onlyIfSelected: Boolean = false) {
+        val navigation = navigationController ?: return
+        val tabs = tabBarController ?: return
+        if (onlyIfSelected && tabs.selectedViewController != navigation) return
+        val controllers = navigation.viewControllers
+        val index = controllers.indexOf(this)
+        if (index < 0) return
+        val hidden = controllers.take(index + 1).drop(1).any { controller ->
+            val screen = controller as UIViewController
+            (screen as? ComposeScreenController)?.hidesTabBar == true || screen.hidesBottomBarWhenPushed
+        }
+        if (tabs.tabBarHidden != hidden) tabs.setTabBarHidden(hidden, animated)
+    }
+
+    private var appearance = 0L
 
     private val composeController = ComposeUIViewController {
         CompositionLocalProvider(
@@ -89,8 +111,22 @@ internal class ComposeScreenController(
         keyboardInset.stop()
     }
 
+    override fun viewWillDisappear(animated: Boolean) {
+        appearance++
+        super.viewWillDisappear(animated)
+    }
+
     override fun viewWillAppear(animated: Boolean) {
         super.viewWillAppear(animated)
+        val currentAppearance = ++appearance
+        if (animated) {
+            // UIKit이 전환 스냅샷을 준비한 뒤 탭 바를 숨겨야 큰 제목이 먼저 접히지 않는다.
+            dispatch_async(dispatch_get_main_queue()) {
+                if (appearance == currentAppearance) updateTabBarVisibility(animated = true)
+            }
+        } else {
+            updateTabBarVisibility(animated = false)
+        }
         // The appearing screen decides whether the navigation controller's toolbar is shown
         // (also when an interactive pop is cancelled and this screen appears again).
         bar.updateToolbarVisibility(animated, onlyIfTop = false)
@@ -153,8 +189,8 @@ internal class EntryScreen(
         } else {
             UINavigationItemLargeTitleDisplayMode.UINavigationItemLargeTitleDisplayModeNever
         }
-        // Must be set before the push to take effect.
-        controller.hidesBottomBarWhenPushed = shared || entry.nativeHidesTabBar
+        // hidesBottomBarWhenPushed는 탭 바와 함께 이전 화면의 큰 제목도 먼저 접는다.
+        controller.hidesTabBar = shared || entry.nativeHidesTabBar
     }
 }
 

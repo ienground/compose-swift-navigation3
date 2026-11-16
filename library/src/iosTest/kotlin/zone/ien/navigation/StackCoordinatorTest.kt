@@ -1,11 +1,14 @@
 package zone.ien.navigation
 
 import androidx.navigation3.runtime.NavEntry
+import platform.UIKit.UITabBarController
 import platform.UIKit.UINavigationController
 import platform.UIKit.UIViewController
 import platform.UIKit.hidesBottomBarWhenPushed
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /** A stack in a tab: its own entries, then NativeTabs' shared screens (UIKit, no window). */
 class StackCoordinatorTest {
@@ -42,7 +45,7 @@ class StackCoordinatorTest {
         stack.show(own = listOf("home", "detail"), shared = listOf("profile", "edit"))
 
         assertEquals(4, navigation.screens.size)
-        assertEquals(listOf(false, false, true, true), navigation.screens.map { it.hidesBottomBarWhenPushed })
+        assertEquals(listOf(false, false, true, true), navigation.screens.map { (it as ComposeScreenController).hidesTabBar })
     }
 
     @Test
@@ -79,7 +82,7 @@ class StackCoordinatorTest {
             shared = listOf(entry("profile", hidesTabBar = false)),
             animated = false,
         )
-        assertEquals(listOf(false, false, true), navigation.screens.map { it.hidesBottomBarWhenPushed })
+        assertEquals(listOf(false, false, true), navigation.screens.map { (it as ComposeScreenController).hidesTabBar })
     }
 
     @Test
@@ -160,7 +163,92 @@ class StackCoordinatorTest {
         navigation.reportShown()
         assertEquals(emptyList(), calls)
         assertEquals(2, navigation.screens.size)
-        assertEquals(true, navigation.screens.last().hidesBottomBarWhenPushed)
+        assertTrue((navigation.screens.last() as ComposeScreenController).hidesTabBar)
+        stack.dispose()
+    }
+
+    @Test
+    fun sharedPushHidesTheTabBarWithoutHidesBottomBarWhenPushed() {
+        val (stack, navigation) = coordinator()
+        val tabs = UITabBarController()
+        tabs.setViewControllers(listOf(navigation), animated = false)
+        stack.show(own = listOf("home"), shared = emptyList())
+        stack.show(own = listOf("home"), shared = listOf("profile"))
+        navigation.topViewController!!.viewWillAppear(false)
+
+        assertFalse(navigation.topViewController!!.hidesBottomBarWhenPushed,
+            "push와 함께 이 플래그를 켜면 이전 화면의 큰 제목이 먼저 접힌다")
+        assertTrue(tabs.tabBarHidden, "탭 바는 UITabBarController에서 숨긴다")
+        navigation.popViewControllerAnimated(false)
+        navigation.reportShown()
+        navigation.topViewController!!.viewWillAppear(false)
+        assertFalse(tabs.tabBarHidden, "루트로 돌아오면 탭 바를 복원한다")
+        stack.dispose()
+    }
+
+    @Test
+    fun appearingScreenRestoresTabVisibilityWhenInteractivePopIsCancelled() {
+        val (stack, navigation) = coordinator()
+        val tabs = UITabBarController()
+        tabs.setViewControllers(listOf(navigation), animated = false)
+        stack.show(own = listOf("home"), shared = listOf("profile"))
+        val root = navigation.screens.first()
+        val detail = navigation.screens.last()
+        detail.viewWillAppear(false)
+        assertTrue(tabs.tabBarHidden)
+        root.viewWillAppear(false)
+        assertFalse(tabs.tabBarHidden)
+        detail.viewWillAppear(false)
+        assertTrue(tabs.tabBarHidden, "취소되면 다시 나타나는 상세 화면의 숨김 상태로 돌아간다")
+        stack.dispose()
+    }
+
+    @Test
+    fun screensAboveAHiddenEntryKeepTheTabBarHidden() {
+        val (stack, navigation) = coordinator()
+        val tabs = UITabBarController()
+        tabs.setViewControllers(listOf(navigation), animated = false)
+        stack.update(listOf(entry("home"), entry("hidden", hidesTabBar = true), entry("detail")), {}, animated = false)
+        navigation.topViewController!!.viewWillAppear(false)
+        assertTrue(tabs.tabBarHidden)
+        navigation.popViewControllerAnimated(false)
+        navigation.reportShown()
+        navigation.topViewController!!.viewWillAppear(false)
+        assertTrue(tabs.tabBarHidden)
+        navigation.popViewControllerAnimated(false)
+        navigation.reportShown()
+        navigation.topViewController!!.viewWillAppear(false)
+        assertFalse(tabs.tabBarHidden)
+        stack.dispose()
+    }
+
+    @Test
+    fun changingTheVisibleEntryMetadataUpdatesTabVisibility() {
+        val (stack, navigation) = coordinator()
+        val tabs = UITabBarController()
+        tabs.setViewControllers(listOf(navigation), animated = false)
+        stack.update(listOf(entry("home"), entry("detail")), {}, animated = false)
+        navigation.topViewController!!.viewWillAppear(false)
+        assertFalse(tabs.tabBarHidden)
+        stack.update(listOf(entry("home"), entry("detail", hidesTabBar = true)), {}, animated = false)
+        assertTrue(tabs.tabBarHidden)
+        stack.update(listOf(entry("home"), entry("detail")), {}, animated = false)
+        assertFalse(tabs.tabBarHidden)
+        stack.dispose()
+    }
+
+    @Test
+    fun unselectedStackDoesNotChangeTheVisibleTabBar() {
+        val (stack, navigation) = coordinator()
+        val other = UINavigationController()
+        val tabs = UITabBarController()
+        tabs.setViewControllers(listOf(other, navigation), animated = false)
+        stack.update(listOf(entry("home"), entry("detail")), {}, animated = false)
+        stack.update(listOf(entry("home"), entry("detail", hidesTabBar = true)), {}, animated = false)
+        assertFalse(tabs.tabBarHidden)
+        tabs.selectedIndex = 1u
+        navigation.topViewController!!.viewWillAppear(false)
+        assertTrue(tabs.tabBarHidden)
         stack.dispose()
     }
 

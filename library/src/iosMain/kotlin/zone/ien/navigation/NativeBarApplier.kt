@@ -1,5 +1,9 @@
 package zone.ien.navigation
 
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.unit.Density
+import platform.UIKit.UIImageRenderingMode
+import platform.UIKit.UIScreen
 import platform.UIKit.UIAction
 import platform.UIKit.UIBarButtonItem
 import platform.UIKit.UIAccessibilityTraitHeader
@@ -70,6 +74,8 @@ internal class NativeBarApplier(private val controller: UIViewController) {
 
     private var latest: NativeBarContent? = null
     private var appliedShape: BarShape? = null
+    private var images: Map<Painter, UIImage?> = emptyMap()
+    private var imageScale = 0f
 
     /**
      * Title used when no [NativeBarItems] title is declared (the entry's `nativeScreen` title).
@@ -100,7 +106,18 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         applyTitle()
 
         val shape = content.shape()
-        if (shape == appliedShape) return
+        val scale = controller.traitCollection.displayScale.toFloat().takeIf { it > 0f }
+            ?: UIScreen.mainScreen.scale.toFloat()
+        if (shape == appliedShape && scale == imageScale) return
+        val previousImages = if (scale == imageScale) images else emptyMap()
+        val painters = (shape.leading + shape.trailing + shape.toolbar).flatMap { button ->
+            listOfNotNull(button.image) + button.menu.mapNotNull { it.image }
+        }.toSet()
+        images = painters.associateWith { painter ->
+            previousImages[painter] ?: renderNativeImage(painter, Density(scale), height = 22f, maxWidth = 22f)
+                ?.imageWithRenderingMode(UIImageRenderingMode.UIImageRenderingModeAlwaysTemplate)
+        }
+        imageScale = scale
         appliedShape = shape
 
         val item = controller.navigationItem
@@ -189,7 +206,7 @@ internal class NativeBarApplier(private val controller: UIViewController) {
     }
 
     private fun barButton(shape: BarShape.ButtonShape, current: () -> NativeBarButton?): UIBarButtonItem {
-        val image = shape.systemImage?.let { UIImage.systemImageNamed(it) }
+        val image = shape.image?.let { images[it] } ?: shape.systemImage?.let { UIImage.systemImageNamed(it) }
         val item = if (shape.menu.isEmpty()) {
             val action = UIAction.actionWithTitle(shape.title, image, identifier = null) { _ ->
                 current()?.takeIf { it.enabled }?.onClick?.invoke()
@@ -199,7 +216,7 @@ internal class NativeBarApplier(private val controller: UIViewController) {
             val actions = shape.menu.mapIndexed { index, menuShape ->
                 UIAction.actionWithTitle(
                     menuShape.title,
-                    menuShape.systemImage?.let { UIImage.systemImageNamed(it) },
+                    menuShape.image?.let { images[it] } ?: menuShape.systemImage?.let { UIImage.systemImageNamed(it) },
                     identifier = null,
                 ) { _ -> current()?.menu?.getOrNull(index)?.onClick?.invoke() }.apply {
                     if (menuShape.destructive) attributes = UIMenuElementAttributesDestructive

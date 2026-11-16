@@ -97,6 +97,18 @@ final class NavigationUITests: ExampleAppTestCase {
         log("DONE")
     }
 
+    func testTabBarVisibilityDuringCancelledPop() throws {
+        launch()
+        tap("Row 3"); pause(1.2)
+        XCTAssertFalse(tabBarShown(), "상세 화면은 탭 바를 숨겨야 한다")
+        edgeSwipe(distance: 50, velocity: 80, hold: 0.3); pause(1.5)
+        expectText("Detail 3", "취소 후 상세 화면")
+        XCTAssertFalse(tabBarShown(), "스와이프 취소 후에도 탭 바를 숨겨야 한다")
+        edgeSwipe(distance: 320, velocity: 1200, hold: 0); pause(1.5)
+        expectText("Row 3", "완료 후 루트 화면")
+        XCTAssertTrue(tabBarShown(), "루트로 돌아오면 탭 바를 표시해야 한다")
+    }
+
     private func tabBarShown() -> Bool {
         let bar = app.tabBars.firstMatch
         return bar.exists && bar.isHittable

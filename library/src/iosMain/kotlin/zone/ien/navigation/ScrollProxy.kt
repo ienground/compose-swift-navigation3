@@ -58,6 +58,9 @@ internal class ScrollProxy : NativeScrollHost {
     /** The Compose view, kept on the viewport. */
     var pinnedView: UIView? = null
 
+    override var overscrollOffset by mutableDoubleStateOf(0.0)
+        private set
+
     private var insetTop by mutableDoubleStateOf(0.0)
     private var insetBottom by mutableDoubleStateOf(0.0)
     private var insetLeft by mutableDoubleStateOf(0.0)
@@ -217,9 +220,9 @@ internal class ScrollProxy : NativeScrollHost {
     private fun pinToViewport() {
         val view = pinnedView ?: return
         val maxOffsetY = ScrollSync.maxOffsetY(contentHeight, viewportHeight, insetTop, insetBottom)
-        val y = ScrollSync.pinnedOffsetY(nativeOffsetY, insetTop, maxOffsetY)
+        overscrollOffset = ScrollSync.overscrollOffsetY(nativeOffsetY, insetTop, maxOffsetY)
         scrollView.bounds.useContents {
-            view.setFrame(CGRectMake(origin.x, y, size.width, size.height))
+            view.setFrame(CGRectMake(origin.x, origin.y, size.width, size.height))
         }
     }
 

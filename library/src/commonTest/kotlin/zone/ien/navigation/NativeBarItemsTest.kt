@@ -1,5 +1,7 @@
 package zone.ien.navigation
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.ColorPainter
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -91,4 +93,30 @@ class NativeBarItemsTest {
         assertNull(state.search)
         assertEquals(listOf<String?>("Search rows", "Search lines", "Search rows", null), seen)
     }
+    @Test
+    fun painterChangesUpdateButtonsAndMenuImages() {
+        val red = ColorPainter(Color.Red)
+        val blue = ColorPainter(Color.Blue)
+        val first = content(null, NativeBarButton("이미지", image = red))
+        val same = content(null, NativeBarButton("이미지", image = red) {})
+        val changed = content(null, NativeBarButton("이미지", image = blue))
+        assertEquals(first.shape(), same.shape())
+        assertNotEquals(first.shape(), changed.shape())
+        val menuA = content(null, NativeBarButton("메뉴", menu = listOf(NativeMenuAction("실행", image = red) {})))
+        val menuB = content(null, NativeBarButton("메뉴", menu = listOf(NativeMenuAction("실행", image = blue) {})))
+        assertNotEquals(menuA.shape(), menuB.shape())
+    }
+
+    @Test
+    fun existingPositionalConstructorsAndTrailingLambdasStayCompatible() {
+        var calls = 0
+        val button = NativeBarButton("버튼", "plus", true, emptyList()) { calls++ }
+        val action = NativeMenuAction("실행", "checkmark", false) { calls++ }
+        button.onClick()
+        action.onClick()
+        assertEquals(2, calls)
+        assertNull(button.image)
+        assertNull(action.image)
+    }
+
 }
