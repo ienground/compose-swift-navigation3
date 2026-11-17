@@ -13,6 +13,17 @@ import androidx.navigation3.runtime.rememberDecoratedNavEntries
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 
 /**
+ * UIKit 내비게이션 계층에 강조색을 공급한다. 뒤로가기·툴바·주요 액션이 같은 색을 상속한다.
+ * [Color.Unspecified]는 호스트의 기본 강조색을 복원한다. Android 등 다른 플랫폼의 UI는 바꾸지 않는다.
+ */
+@Composable
+public fun NativeNavigationTint(color: Color, content: @Composable () -> Unit) {
+    CompositionLocalProvider(LocalNativeNavigationTint provides color, content = content)
+}
+
+internal val LocalNativeNavigationTint = staticCompositionLocalOf { Color.Unspecified }
+
+/**
  * Supplies the selected tab icon and label color to [NativeTabs].
  * [Color.Unspecified] restores the platform tint. Unselected tabs keep their platform colors.
  */

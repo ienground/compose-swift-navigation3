@@ -10,7 +10,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.uikit.LocalUIViewController
 import androidx.compose.ui.unit.Density
@@ -161,9 +160,11 @@ private class RootNavigationHost(private val root: NativeNavigationRootControlle
         val declaration = rememberRootDeclaration(root)
         val currentOnBack by rememberUpdatedState(onBack)
         val titleImages = rememberTitleImages(entries)
+        val tint = LocalNativeNavigationTint.current
         SideEffect {
             root.titleImages.update(titleImages)
             root.updateStack(declaration, entries) { currentOnBack() }
+            root.updateTint(tint)
         }
     }
 
@@ -181,6 +182,7 @@ private class RootNavigationHost(private val root: NativeNavigationRootControlle
         val currentOnSharedBack by rememberUpdatedState(onSharedBack)
         val titleImages = rememberTitleImages(entriesPerTab.flatten() + sharedEntries)
         val tint = LocalNativeTabBarTint.current
+        val navigationTint = LocalNativeNavigationTint.current
         val states = tabs.mapIndexed { index, tab ->
             key(index) {
                 TabState(
@@ -199,6 +201,7 @@ private class RootNavigationHost(private val root: NativeNavigationRootControlle
                 shared = SharedState(sharedEntries) { currentOnSharedBack() },
                 tint = tint,
             )
+            root.updateTint(navigationTint)
         }
     }
 }
@@ -270,6 +273,25 @@ internal class NativeNavigationRootController(
     /** The hierarchy on screen; it belongs to [RootLayout.declaration]. */
     private var layout: RootLayout? = null
     private var clearScheduled = false
+
+    private val defaultTint by lazy { view.tintColor }
+
+    /** 호스트 루트의 강조색을 바꾸면 현재 화면과 이후 화면의 UIKit 컨트롤이 함께 상속한다. */
+    fun updateTint(color: Color) {
+        val platformDefault = defaultTint
+        val tint = if (color == Color.Unspecified) platformDefault else color.toUIColor()
+        if (view.tintColor != tint) view.tintColor = tint
+        val navigationControllers = when (val current = layout?.controller) {
+            is UINavigationController -> listOf(current)
+            is UITabBarController -> current.viewControllers.orEmpty().filterIsInstance<UINavigationController>()
+            else -> emptyList()
+        }
+        navigationControllers.forEach { navigation ->
+            if (navigation.view.tintColor != tint) navigation.view.tintColor = tint
+            if (navigation.navigationBar.tintColor != tint) navigation.navigationBar.tintColor = tint
+            if (navigation.toolbar.tintColor != tint) navigation.toolbar.tintColor = tint
+        }
+    }
 
     fun saveState(): NSData? {
         val dropped = mutableListOf<String>()
@@ -462,10 +484,7 @@ private class TabsLayout(
     }
 
     fun update(tabs: List<TabState>, selectedTab: Int, onTabSelected: (Int) -> Unit, shared: SharedState, tint: Color) {
-        tabBarController.tabBar.tintColor = if (tint == Color.Unspecified) defaultTint else {
-            val srgb = tint.convert(ColorSpaces.Srgb)
-            UIColor(red = srgb.red.toDouble(), green = srgb.green.toDouble(), blue = srgb.blue.toDouble(), alpha = srgb.alpha.toDouble())
-        }
+        tabBarController.tabBar.tintColor = if (tint == Color.Unspecified) defaultTint else tint.toUIColor()
         this.onTabSelected = onTabSelected
         if (stacks.size != tabs.size) {
             stacks.forEach { it.dispose() }

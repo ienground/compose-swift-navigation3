@@ -231,7 +231,7 @@ internal class ScrollProxy : NativeScrollHost {
     }
 }
 
-private fun Color.toUIColor(): UIColor {
+internal fun Color.toUIColor(): UIColor {
     if (this == Color.Unspecified) return UIColor.systemBackgroundColor
     val srgb = convert(ColorSpaces.Srgb)
     return UIColor(

@@ -29,6 +29,46 @@ import kotlin.test.assertTrue
 class StackCoordinatorTest {
 
     @Test
+    fun `스택의 네이티브 강조색은 변경과 기본색 복원을 반영한다`() = verifyNavigationTint(false)
+
+    @Test
+    fun `탭 안의 네이티브 강조색도 변경과 기본색 복원을 반영한다`() = verifyNavigationTint(true)
+
+    private fun verifyNavigationTint(tabs: Boolean) {
+        val tint = mutableStateOf(Color.Red)
+        val controller = NativeNavigationViewController {
+            NativeNavigationTint(tint.value) {
+                if (tabs) {
+                    NativeTabs(
+                        tabs = listOf(NativeTab("Home", "house", listOf("home"))),
+                        selectedTab = 0, onTabSelected = {},
+                        entryProvider = { NavEntry(it) {} },
+                    ) {}
+                } else {
+                    NativeStack(backStack = listOf("home"), onBack = {}, entryProvider = { NavEntry(it) {} }) {}
+                }
+            }
+        }
+        controller.loadViewIfNeeded()
+        val child = controller.childViewControllers.single()
+        val navigation = if (tabs) {
+            assertIs<UINavigationController>(assertIs<UITabBarController>(child).viewControllers!!.single())
+        } else assertIs<UINavigationController>(child)
+        val systemTint = UIViewController().view.tintColor
+        for ((color, expected) in listOf(
+            Color.Red to UIColor(red = 1.0, green = 0.0, blue = 0.0, alpha = 1.0),
+            Color.Blue to UIColor(red = 0.0, green = 0.0, blue = 1.0, alpha = 1.0),
+            Color.Unspecified to systemTint,
+        )) {
+            tint.value = color
+            Snapshot.sendApplyNotifications()
+            repeat(10) { NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.02)) }
+            assertEquals(expected, navigation.navigationBar.tintColor)
+            assertEquals(expected, navigation.toolbar.tintColor)
+        }
+    }
+
+    @Test
     fun customTabImagesReachUIKitBeforeScreenComposition() {
         val controller = NativeNavigationViewController {
             NativeTabs(

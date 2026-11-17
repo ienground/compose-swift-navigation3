@@ -17,6 +17,8 @@ import androidx.compose.ui.graphics.painter.Painter
  * @param title label; with [systemImage] or [image] it is the accessibility label.
  * @param systemImage SF Symbol name shown on iOS instead of the title.
  * @param image 사용자 이미지. 지정하면 [systemImage]보다 우선하며, iOS에서는 네이티브 tint를 적용한다.
+ * @param badge 0이면 숨김, 양수이면 숫자, 음수이면 표시점이다. iOS 18.2 이상에서 UIKit 버튼에 표시한다.
+ * @param isPrimary 주요 액션이면 UIKit 강조 스타일을 적용하고, 오른쪽 일반 액션 그룹과 간격을 둔다.
  * @param menu when not empty, tapping the button opens this menu (`UIMenu` on iOS) and
  *   [onClick] is not used.
  */
@@ -27,6 +29,8 @@ public class NativeBarButton(
     public val enabled: Boolean = true,
     public val menu: List<NativeMenuAction> = emptyList(),
     public val image: Painter? = null,
+    public val badge: Int = 0,
+    public val isPrimary: Boolean = false,
     public val onClick: () -> Unit = {},
 ) {
     /** 기존 생성자의 위치 인수와 기본 인수 호출을 유지한다. */
@@ -36,11 +40,35 @@ public class NativeBarButton(
         enabled: Boolean = true,
         menu: List<NativeMenuAction> = emptyList(),
         onClick: () -> Unit = {},
-    ) : this(title, systemImage, enabled, menu, image = null, onClick = onClick)
+    ) : this(title, systemImage, enabled, menu, image = null, badge = 0, onClick = onClick)
+
+    /** Painter를 받던 기존 위치 인수 생성자를 유지한다. */
+    public constructor(
+        title: String,
+        systemImage: String?,
+        enabled: Boolean,
+        menu: List<NativeMenuAction>,
+        image: Painter?,
+        onClick: () -> Unit,
+    ) : this(title, systemImage, enabled, menu, image, badge = 0, onClick = onClick)
+
+    /** 배지를 받던 기존 위치 인수 생성자를 유지한다. */
+    public constructor(
+        title: String,
+        systemImage: String?,
+        enabled: Boolean,
+        menu: List<NativeMenuAction>,
+        image: Painter?,
+        badge: Int,
+        onClick: () -> Unit,
+    ) : this(title, systemImage, enabled, menu, image, badge, isPrimary = false, onClick = onClick)
 }
 
 /**
  * An action of a [NativeBarButton.menu].
+ *
+ * @param enabled 메뉴 항목의 활성 상태.
+ * @param badge 0이면 숨김, 양수이면 숫자, 음수이면 표시점이다. UIKit 메뉴에서는 부제목으로 표시한다.
  *
  * @param image 사용자 이미지. 지정하면 [systemImage]보다 우선하며, iOS에서는 네이티브 tint를 적용한다.
  */
@@ -50,6 +78,8 @@ public class NativeMenuAction(
     public val systemImage: String? = null,
     public val destructive: Boolean = false,
     public val image: Painter? = null,
+    public val enabled: Boolean = true,
+    public val badge: Int = 0,
     public val onClick: () -> Unit,
 ) {
     /** 기존 생성자의 위치 인수와 기본 인수 호출을 유지한다. */
@@ -58,7 +88,16 @@ public class NativeMenuAction(
         systemImage: String? = null,
         destructive: Boolean = false,
         onClick: () -> Unit,
-    ) : this(title, systemImage, destructive, image = null, onClick = onClick)
+    ) : this(title, systemImage, destructive, image = null, enabled = true, badge = 0, onClick = onClick)
+
+    /** Painter를 받던 기존 위치 인수 생성자를 유지한다. */
+    public constructor(
+        title: String,
+        systemImage: String?,
+        destructive: Boolean,
+        image: Painter?,
+        onClick: () -> Unit,
+    ) : this(title, systemImage, destructive, image, enabled = true, badge = 0, onClick = onClick)
 }
 
 /** Everything one screen declared with [NativeBarItems]. */
@@ -206,10 +245,19 @@ internal data class BarShape(
         val systemImage: String?,
         val enabled: Boolean,
         val image: Painter?,
+        val badge: Int,
+        val isPrimary: Boolean,
         val menu: List<MenuShape>,
     )
 
-    data class MenuShape(val title: String, val systemImage: String?, val destructive: Boolean, val image: Painter?)
+    data class MenuShape(
+        val title: String,
+        val systemImage: String?,
+        val destructive: Boolean,
+        val image: Painter?,
+        val enabled: Boolean,
+        val badge: Int,
+    )
 
     companion object {
         val Empty = BarShape(emptyList(), emptyList(), emptyList())
@@ -224,7 +272,9 @@ internal fun NativeBarContent?.shape(): BarShape {
             systemImage = button.systemImage,
             enabled = button.enabled,
             image = button.image,
-            menu = button.menu.map { BarShape.MenuShape(it.title, it.systemImage, it.destructive, it.image) },
+            badge = button.badge,
+            isPrimary = button.isPrimary,
+            menu = button.menu.map { BarShape.MenuShape(it.title, it.systemImage, it.destructive, it.image, it.enabled, it.badge) },
         )
     }
     return BarShape(leading.shapes(), trailing.shapes(), toolbar.shapes())

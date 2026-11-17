@@ -2,10 +2,35 @@ package zone.ien.navigation
 
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.unit.Density
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.useContents
+import platform.CoreGraphics.CGRectMake
+import platform.CoreGraphics.CGSizeMake
+import platform.UIKit.UIGraphicsImageRenderer
+import platform.UIKit.UIButton
+import platform.UIKit.UIButtonTypeSystem
+import platform.UIKit.UIControlStateNormal
+import platform.UIKit.UIControlEventTouchUpInside
+import platform.UIKit.systemRedColor
+import platform.UIKit.UIColor
+import platform.UIKit.UIFont
+import platform.UIKit.UIFontWeightSemibold
+import platform.UIKit.UIView
+import platform.UIKit.UIViewAutoresizingFlexibleWidth
+import platform.UIKit.UIViewAutoresizingFlexibleHeight
+import platform.UIKit.UIViewAutoresizingFlexibleLeftMargin
+import platform.UIKit.UIViewAutoresizingFlexibleBottomMargin
+import platform.UIKit.UILabel
+import platform.UIKit.NSTextAlignmentCenter
+import platform.UIKit.UIMenuElementAttributesDisabled
+import platform.UIKit.accessibilityValue
 import platform.UIKit.UIImageRenderingMode
 import platform.UIKit.UIScreen
 import platform.UIKit.UIAction
 import platform.UIKit.UIBarButtonItem
+import platform.UIKit.UIBarButtonItemStyle.UIBarButtonItemStyleDone
+import platform.UIKit.UIBarButtonItemStyle.UIBarButtonItemStylePlain
+import platform.UIKit.UIBarButtonSystemItem.UIBarButtonSystemItemFixedSpace
 import platform.UIKit.UIAccessibilityTraitHeader
 import platform.UIKit.UIImage
 import platform.UIKit.UIImageView
@@ -32,7 +57,7 @@ import kotlin.native.ref.WeakReference
  * menus). Click handlers look up the latest content at tap time, so recompositions that only
  * create new lambdas do not touch UIKit (no flicker, open menus stay open).
  */
-@OptIn(ExperimentalNativeApi::class)
+@OptIn(ExperimentalNativeApi::class, ExperimentalForeignApi::class)
 internal class NativeBarApplier(private val controller: UIViewController) {
 
     private var searchController: UISearchController? = null
@@ -129,8 +154,16 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         )
         // rightBarButtonItems are ordered from the right edge; the API takes them left to right.
         item.setRightBarButtonItems(
-            shape.trailing.mapIndexed { index, button -> barButton(button) { applier.get()?.latest?.trailing?.getOrNull(index) } }
-                .reversed(),
+            shape.trailing.flatMapIndexed { index, button ->
+                val barItem = barButton(button) { applier.get()?.latest?.trailing?.getOrNull(index) }
+                if (button.isPrimary && index > 0 && !shape.trailing[index - 1].isPrimary) {
+                    val separator = UIBarButtonItem(barButtonSystemItem = UIBarButtonSystemItemFixedSpace, target = null, action = null)
+                    separator.width = 8.0
+                    listOf(separator, barItem)
+                } else {
+                    listOf(barItem)
+                }
+            }.reversed(),
             animated = false,
         )
         controller.setToolbarItems(toolbarItems(shape.toolbar), animated = false)
@@ -218,8 +251,17 @@ internal class NativeBarApplier(private val controller: UIViewController) {
                     menuShape.title,
                     menuShape.image?.let { images[it] } ?: menuShape.systemImage?.let { UIImage.systemImageNamed(it) },
                     identifier = null,
-                ) { _ -> current()?.menu?.getOrNull(index)?.onClick?.invoke() }.apply {
-                    if (menuShape.destructive) attributes = UIMenuElementAttributesDestructive
+                ) { _ ->
+                    current()?.takeIf { it.enabled }?.menu?.getOrNull(index)
+                        ?.takeIf { it.enabled }?.onClick?.invoke()
+                }.apply {
+                    attributes = (if (menuShape.destructive) UIMenuElementAttributesDestructive else 0uL) or
+                        (if (menuShape.enabled) 0uL else UIMenuElementAttributesDisabled)
+                    subtitle = when {
+                        menuShape.badge > 0 -> menuShape.badge.toString()
+                        menuShape.badge < 0 -> "•"
+                        else -> null
+                    }
                 }
             }
             UIBarButtonItem(primaryAction = null, menu = UIMenu.menuWithTitle("", children = actions)).apply {
@@ -227,8 +269,68 @@ internal class NativeBarApplier(private val controller: UIViewController) {
                 this.image = image
             }
         }
+        item.style = if (shape.isPrimary) UIBarButtonItemStyleDone else UIBarButtonItemStylePlain
         item.enabled = shape.enabled
         item.accessibilityLabel = shape.title
+        if (shape.badge != 0) {
+            item.customView = badgedButton(shape, image, item, current)
+        }
         return item
+    }
+
+    /** iOS 18.2부터 지원하는 UIKit 컨트롤로 배지를 표시하며, 시스템 바 자체는 유지한다. */
+    private fun badgedButton(
+        shape: BarShape.ButtonShape,
+        image: UIImage?,
+        item: UIBarButtonItem,
+        current: () -> NativeBarButton?,
+    ): UIView {
+        val button = UIButton.buttonWithType(UIButtonTypeSystem)
+        if (image != null) button.setImage(image, forState = UIControlStateNormal)
+        else button.setTitle(shape.title, forState = UIControlStateNormal)
+        if (item.menu != null) {
+            button.menu = item.menu
+            button.showsMenuAsPrimaryAction = true
+        } else {
+            button.addAction(UIAction.actionWithHandler { _ ->
+                current()?.takeIf { it.enabled }?.onClick?.invoke()
+            }, forControlEvents = UIControlEventTouchUpInside)
+        }
+        button.enabled = shape.enabled
+        button.accessibilityLabel = shape.title
+        button.accessibilityValue = if (shape.badge > 0) shape.badge.toString() else "•"
+        button.sizeToFit()
+        val width = button.bounds.useContents { size.width.coerceAtLeast(44.0) } + 8.0
+        val container = UIView(frame = CGRectMake(0.0, 0.0, width, 44.0))
+        button.setFrame(container.bounds)
+        button.autoresizingMask = UIViewAutoresizingFlexibleWidth or UIViewAutoresizingFlexibleHeight
+        container.addSubview(button)
+        val label = UILabel().apply {
+            text = if (shape.badge > 0) shape.badge.toString() else ""
+            font = UIFont.systemFontOfSize(11.0, weight = UIFontWeightSemibold)
+            textAlignment = NSTextAlignmentCenter
+            textColor = UIColor.whiteColor
+            backgroundColor = UIColor.systemRedColor
+            userInteractionEnabled = false
+            isAccessibilityElement = false
+            sizeToFit()
+        }
+        val height = if (shape.badge > 0) 16.0 else 8.0
+        val badgeWidth = label.bounds.useContents { size.width + 8.0 }.coerceAtLeast(height)
+        label.setFrame(CGRectMake(0.0, 0.0, badgeWidth, height))
+        label.layer.cornerRadius = height / 2.0
+        label.clipsToBounds = true
+        // 네이티브 바의 vibrancy가 배지 색상을 바꾸지 않도록 원본 색상의 이미지로 전달한다.
+        val badgeImage = UIGraphicsImageRenderer(size = CGSizeMake(badgeWidth, height)).imageWithActions {
+            label.layer.renderInContext(it!!.CGContext)
+        }.imageWithRenderingMode(UIImageRenderingMode.UIImageRenderingModeAlwaysOriginal)
+        val badgeView = UIImageView(image = badgeImage)
+        badgeView.setFrame(CGRectMake(width - badgeWidth, 0.0, badgeWidth, height))
+        badgeView.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin or UIViewAutoresizingFlexibleBottomMargin
+        badgeView.isAccessibilityElement = false
+        badgeView.userInteractionEnabled = false
+        badgeView.alpha = if (shape.enabled) 1.0 else 0.5
+        container.addSubview(badgeView)
+        return container
     }
 }

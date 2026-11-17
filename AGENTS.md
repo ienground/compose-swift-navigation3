@@ -568,6 +568,9 @@ NativeBarItems(
   - `leading`과 `trailing`은 `navigationItem`의 왼쪽·오른쪽 버튼(`UIBarButtonItem`)이 된다. 둘 다 왼쪽에서 오른쪽 순서로 선언한다.
   - 뒤로 버튼은 유지한다(`leftItemsSupplementBackButton`).
   - 버튼 동작은 `UIAction` 클로저, 메뉴는 `UIMenu`다. destructive 속성을 지원하고, `title`은 접근성 레이블이 된다.
+- **배지와 메뉴 활성 상태**: `NativeBarButton.badge`·`NativeMenuAction.badge`는 0이면 숨김, 양수이면 숫자, 음수이면 표시점이다. 바 버튼은 배지가 있을 때만 UIKit `UIButton`과 원본 색상을 보존한 배지 `UIImageView`를 `customView` 안에 배치하며, 메뉴는 `UIAction.subtitle`로 표시한다. 메뉴의 `enabled`는 disabled 속성과 클릭 시점 검사에 모두 반영한다. iOS 26 전용 배지 API와 OS 버전 분기를 사용하지 않는다.
+- **내비게이션 강조색**: `NativeNavigationTint(color)`가 UI 없는 호스트에서 스택·탭 내비게이션의 강조색을 공급한다. 루트·각 navigation controller의 뷰와 내비게이션 바·툴바 tint를 갱신한다. `Color.Unspecified`는 호스트의 기본색을 복원하며, 탭 선택색은 기존 `NativeTabBarTint`가 관리한다.
+- **주요 액션**: `NativeBarButton.isPrimary`는 iOS 18.2부터 지원하는 `UIBarButtonItemStyleDone`으로 전달한다. 최신 UIKit에서는 시스템의 prominent 스타일이 된다. 오른쪽 일반 액션과는 fixed-space 아이템으로 간격을 둔다.
 - **툴바**
   - `toolbar`는 화면의 `toolbarItems`가 된다. 버튼 사이에는 flexible space를 넣는다.
   - 툴바는 navigation controller 하나에 하나뿐이다. 그래서 나타나는 화면(`viewWillAppear`)이 자기 항목 유무에 따라 보이거나 숨긴다. 스와이프를 취소해 원래 화면이 다시 나타날 때도 같다.

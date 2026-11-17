@@ -22,6 +22,8 @@ import kotlin.native.runtime.GC
 import kotlin.native.runtime.NativeRuntimeApi
 import kotlin.test.Test
 import kotlin.test.assertNull
+import platform.UIKit.accessibilityLabel
+import platform.UIKit.accessibilityValue
 import platform.UIKit.UIViewController
 
 @OptIn(ExperimentalNativeApi::class, NativeRuntimeApi::class, BetaInteropApi::class, ExperimentalForeignApi::class)
@@ -118,6 +120,120 @@ class NativeBarApplierTest {
             assertEquals(56.0, width, 0.01)
             assertEquals(28.0, height, 0.01)
         }
+    }
+
+    @Test
+    fun `메뉴 비활성 상태와 배지를 UIKit에 반영한다`() {
+        val controller = UIViewController()
+        val applier = NativeBarApplier(controller)
+        fun content(enabled: Boolean, badge: Int) = NativeBarContent(null, emptyList(), listOf(
+            NativeBarButton("메뉴", menu = listOf(NativeMenuAction("알림", enabled = enabled, badge = badge) {})),
+        ), emptyList())
+        applier.apply(content(false, 12))
+        val item = controller.navigationItem.rightBarButtonItems!!.single() as UIBarButtonItem
+        val action = item.menu!!.children.single() as UIAction
+        assertEquals(platform.UIKit.UIMenuElementAttributesDisabled, action.attributes)
+        assertEquals("12", action.subtitle)
+        applier.apply(content(true, 12))
+        val enabledItem = controller.navigationItem.rightBarButtonItems!!.single() as UIBarButtonItem
+        assertEquals(0uL, (enabledItem.menu!!.children.single() as UIAction).attributes)
+        applier.apply(content(true, -1))
+        val updated = controller.navigationItem.rightBarButtonItems!!.single() as UIBarButtonItem
+        val updatedAction = updated.menu!!.children.single() as UIAction
+        assertEquals(0uL, updatedAction.attributes)
+        assertEquals("•", updatedAction.subtitle)
+    }
+
+    @Test
+    fun `버튼 배지를 표시하고 제거하며 클릭은 최신 선언을 사용한다`() {
+        var calls = 0
+        val controller = UIViewController()
+        val applier = NativeBarApplier(controller)
+        fun content(badge: Int, click: () -> Unit) = NativeBarContent(null, emptyList(), listOf(
+            NativeBarButton("알림", systemImage = "bell", badge = badge, onClick = click),
+        ), emptyList())
+        applier.apply(content(3) { calls++ })
+        val item = controller.navigationItem.rightBarButtonItems!!.single() as UIBarButtonItem
+        val container = assertNotNull(item.customView)
+        val button = container.subviews.filterIsInstance<platform.UIKit.UIButton>().single()
+        val badgeView = container.subviews.filterIsInstance<platform.UIKit.UIImageView>().single()
+        assertEquals("3", button.accessibilityValue)
+        assertEquals(UIImageRenderingMode.UIImageRenderingModeAlwaysOriginal, assertNotNull(badgeView.image).renderingMode)
+        applier.apply(content(3) { calls += 10 })
+        button.sendActionsForControlEvents(platform.UIKit.UIControlEventTouchUpInside)
+        assertEquals(10, calls)
+        applier.apply(content(0) {})
+        val cleared = controller.navigationItem.rightBarButtonItems!!.single() as UIBarButtonItem
+        assertNull(cleared.customView)
+    }
+
+    @Test
+    fun `배지가 있는 버튼과 메뉴도 컨트롤러를 유지하지 않는다`() {
+        val button = NativeBarButton("알림", badge = 5)
+        val menu = NativeBarButton("메뉴", badge = -1, menu = listOf(NativeMenuAction("알림", badge = 3) {}))
+        assertReleased(NativeBarContent(null, listOf(button), listOf(menu), listOf(button)))
+    }
+
+    @Test
+    fun `배지는 네이티브 바가 버튼 크기를 바꿔도 버튼 안에 남는다`() {
+        val controller = UIViewController()
+        val navigation = platform.UIKit.UINavigationController(rootViewController = controller)
+        val window = platform.UIKit.UIWindow(frame = platform.UIKit.UIScreen.mainScreen.bounds)
+        window.rootViewController = navigation
+        window.makeKeyAndVisible()
+        try {
+            val applier = NativeBarApplier(controller)
+            for (badge in listOf(12, -1)) {
+                applier.apply(NativeBarContent(null, emptyList(), listOf(
+                    NativeBarButton("알림", systemImage = "bell", badge = badge),
+                ), emptyList()))
+                navigation.view.layoutIfNeeded()
+                val item = controller.navigationItem.rightBarButtonItems!!.single() as UIBarButtonItem
+                val container = assertNotNull(item.customView)
+                val badgeView = container.subviews.filterIsInstance<platform.UIKit.UIImageView>().single()
+                assertEquals(UIImageRenderingMode.UIImageRenderingModeAlwaysOriginal, assertNotNull(badgeView.image).renderingMode)
+                container.setFrame(platform.CoreGraphics.CGRectMake(0.0, 0.0, 34.0, 34.0))
+                container.layoutIfNeeded()
+                val right = badgeView.frame.useContents { origin.x + size.width }
+                val width = container.bounds.useContents { size.width }
+                kotlin.test.assertTrue(right <= width, "배지 오른쪽=$right, 버튼 너비=$width")
+                assertEquals(if (badge > 0) 16.0 else 8.0, badgeView.bounds.useContents { size.height })
+            }
+        } finally {
+            window.hidden = true
+            window.rootViewController = null
+        }
+    }
+
+    @Test
+    fun `주요 액션은 네이티브 강조 스타일로 구분하고 변경을 반영한다`() {
+        val controller = UIViewController()
+        val applier = NativeBarApplier(controller)
+        fun content(primary: Boolean) = NativeBarContent(null, emptyList(), listOf(
+            NativeBarButton("저장", systemImage = "checkmark", isPrimary = primary),
+        ), emptyList())
+        applier.apply(content(true))
+        val primary = controller.navigationItem.rightBarButtonItems!!.single() as UIBarButtonItem
+        assertEquals(platform.UIKit.UIBarButtonItemStyle.UIBarButtonItemStyleDone, primary.style)
+        applier.apply(content(false))
+        val regular = controller.navigationItem.rightBarButtonItems!!.single() as UIBarButtonItem
+        assertEquals(platform.UIKit.UIBarButtonItemStyle.UIBarButtonItemStylePlain, regular.style)
+    }
+
+    @Test
+    fun `주요 액션을 오른쪽 끝에 유지하고 일반 액션과 간격을 둔다`() {
+        val controller = UIViewController()
+        NativeBarApplier(controller).apply(NativeBarContent(null, emptyList(), listOf(
+            NativeBarButton("일반", systemImage = "plus"),
+            NativeBarButton("저장", systemImage = "checkmark", isPrimary = true),
+        ), emptyList()))
+        val items = controller.navigationItem.rightBarButtonItems!!.map { it as UIBarButtonItem }
+        assertEquals(3, items.size)
+        assertEquals("저장", items.first().accessibilityLabel)
+        assertEquals(platform.UIKit.UIBarButtonItemStyle.UIBarButtonItemStyleDone, items.first().style)
+        assertNull(items[1].primaryAction)
+        kotlin.test.assertTrue(items[1].width > 0.0)
+        assertEquals("일반", items.last().accessibilityLabel)
     }
 
 }
