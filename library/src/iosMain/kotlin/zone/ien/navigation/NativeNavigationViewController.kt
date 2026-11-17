@@ -1,5 +1,6 @@
 package zone.ien.navigation
 
+import androidx.compose.runtime.key
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -8,6 +9,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.uikit.LocalUIViewController
 import androidx.compose.ui.unit.Density
@@ -177,16 +180,24 @@ private class RootNavigationHost(private val root: NativeNavigationRootControlle
         val currentOnTabSelected by rememberUpdatedState(onTabSelected)
         val currentOnSharedBack by rememberUpdatedState(onSharedBack)
         val titleImages = rememberTitleImages(entriesPerTab.flatten() + sharedEntries)
+        val tint = LocalNativeTabBarTint.current
+        val states = tabs.mapIndexed { index, tab ->
+            key(index) {
+                TabState(
+                    tab.title, tab.systemImage, entriesPerTab[index], tab.onBack,
+                    rememberNativeTabImage(tab.image), rememberNativeTabImage(tab.selectedImage),
+                )
+            }
+        }
         SideEffect {
             root.titleImages.update(titleImages)
             root.updateTabs(
                 declaration = declaration,
-                tabs = tabs.mapIndexed { index, tab ->
-                    TabState(tab.title, tab.systemImage, entriesPerTab[index], tab.onBack)
-                },
+                tabs = states,
                 selectedTab = selectedTab,
                 onTabSelected = { currentOnTabSelected(it) },
                 shared = SharedState(sharedEntries) { currentOnSharedBack() },
+                tint = tint,
             )
         }
     }
@@ -214,6 +225,15 @@ internal class TabState(
     val systemImage: String,
     val entries: List<NavEntry<*>>,
     val onBack: () -> Unit,
+    val image: UIImage? = null,
+    val selectedImage: UIImage? = null,
+)
+
+private data class TabAppearance(
+    val title: String,
+    val systemImage: String,
+    val image: UIImage?,
+    val selectedImage: UIImage?,
 )
 
 /** [NativeTabs]' shared screens: pushed on the selected tab, above its own screens. */
@@ -328,12 +348,13 @@ internal class NativeNavigationRootController(
         selectedTab: Int,
         onTabSelected: (Int) -> Unit,
         shared: SharedState,
+        tint: Color = Color.Unspecified,
     ) {
         val current = layout as? TabsLayout
         if (current != null && current.declaration === declaration) {
-            current.update(tabs, selectedTab, onTabSelected, shared)
+            current.update(tabs, selectedTab, onTabSelected, shared, tint)
         } else {
-            show(TabsLayout(declaration, leases, titleImages).also { it.update(tabs, selectedTab, onTabSelected, shared) })
+            show(TabsLayout(declaration, leases, titleImages).also { it.update(tabs, selectedTab, onTabSelected, shared, tint) })
         }
     }
 
@@ -418,10 +439,11 @@ private class TabsLayout(
     private val titleImages: TitleImages,
 ) : RootLayout {
     private val tabBarController = UITabBarController()
+    private val defaultTint = tabBarController.tabBar.tintColor
     override val controller: UIViewController get() = tabBarController
 
     private var stacks: List<StackCoordinator> = emptyList()
-    private var items: List<Pair<String, String>> = emptyList()
+    private var items: List<TabAppearance> = emptyList()
     private var onTabSelected: (Int) -> Unit = {}
 
     private val delegate = object : NSObject(), UITabBarControllerDelegateProtocol {
@@ -439,7 +461,11 @@ private class TabsLayout(
         tabBarController.delegate = delegate
     }
 
-    fun update(tabs: List<TabState>, selectedTab: Int, onTabSelected: (Int) -> Unit, shared: SharedState) {
+    fun update(tabs: List<TabState>, selectedTab: Int, onTabSelected: (Int) -> Unit, shared: SharedState, tint: Color) {
+        tabBarController.tabBar.tintColor = if (tint == Color.Unspecified) defaultTint else {
+            val srgb = tint.convert(ColorSpaces.Srgb)
+            UIColor(red = srgb.red.toDouble(), green = srgb.green.toDouble(), blue = srgb.blue.toDouble(), alpha = srgb.alpha.toDouble())
+        }
         this.onTabSelected = onTabSelected
         if (stacks.size != tabs.size) {
             stacks.forEach { it.dispose() }
@@ -447,13 +473,13 @@ private class TabsLayout(
             tabBarController.setViewControllers(stacks.map { it.navigationController }, animated = false)
             items = emptyList()
         }
-        val newItems = tabs.map { it.title to it.systemImage }
+        val newItems = tabs.map { TabAppearance(it.title, it.systemImage, it.image, it.selectedImage) }
         if (newItems != items) {
             stacks.forEachIndexed { index, stack ->
                 stack.navigationController.tabBarItem = UITabBarItem(
-                    title = newItems[index].first,
-                    image = UIImage.systemImageNamed(newItems[index].second),
-                    selectedImage = null,
+                    title = newItems[index].title,
+                    image = newItems[index].image ?: UIImage.systemImageNamed(newItems[index].systemImage),
+                    selectedImage = newItems[index].selectedImage,
                 )
             }
             items = newItems

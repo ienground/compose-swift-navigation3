@@ -55,13 +55,15 @@ class ScrollProxyTest {
         }
         setContent {
             CompositionLocalProvider(LocalNativeScrollHost provides proxy) {
-                Column(Modifier.size(200.dp, 300.dp)) {
-                    NativeScrollContent(Modifier.weight(1f)) {
-                        NativeScrollContent(Modifier.fillMaxSize()) {
-                            Box(Modifier.fillMaxSize().testTag("content"))
+                NativeScrollContent {
+                    Column(Modifier.size(200.dp, 300.dp)) {
+                        NativeScrollContent(Modifier.weight(1f)) {
+                            NativeScrollContent(Modifier.fillMaxSize()) {
+                                Box(Modifier.fillMaxSize().testTag("content"))
+                            }
                         }
+                        Box(Modifier.height(48.dp).testTag("bottomBar"))
                     }
-                    Box(Modifier.height(48.dp).testTag("bottomBar"))
                 }
             }
         }

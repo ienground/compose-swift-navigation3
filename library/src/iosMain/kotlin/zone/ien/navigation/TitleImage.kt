@@ -25,6 +25,7 @@ import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGSizeMake
 import platform.UIKit.UIGraphicsImageRenderer
 import platform.UIKit.UIImage
+import platform.UIKit.UIImageRenderingMode
 
 /**
  * Title images ([nativeScreen] `titleImage`) rendered by the host composition, by content key.
@@ -100,5 +101,17 @@ internal fun renderNativeImage(
     return renderer.imageWithActions { context ->
         CGContextSetInterpolationQuality(context?.CGContext, kCGInterpolationHigh)
         drawn.drawInRect(CGRectMake(0.0, 0.0, width.toDouble(), renderedHeight.toDouble()))
+    }
+}
+
+/** 탭 아이콘은 호스트에서 준비하여 첫 화면 표시 전 UIKit에 전달합니다. */
+@Composable
+internal fun rememberNativeTabImage(painter: Painter?): UIImage? {
+    val density = LocalDensity.current
+    return remember(painter, density) {
+        painter?.let {
+            renderNativeImage(it, density, height = 25f, maxWidth = 25f)
+                ?.imageWithRenderingMode(UIImageRenderingMode.UIImageRenderingModeAlwaysTemplate)
+        }
     }
 }

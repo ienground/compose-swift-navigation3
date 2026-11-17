@@ -314,7 +314,7 @@ NativeTabs(
 ) { MaterialChrome() }
 ```
 
-이 부분 예제는 빠른 시작에 앱의 `Settings` 라우트, 제공자, `NativeNavigationScope<NavKey>.MaterialChrome()` 렌더러를 더한 것입니다. 전체 구현은 [App.kt](example/shared/src/commonMain/kotlin/zone/ien/utils/example/App.kt)를 참고하세요.
+이 부분 예제는 빠른 시작에 앱의 `Settings` 라우트, 제공자, `NativeNavigationScope<NavKey>.MaterialChrome()` 렌더러를 더한 것입니다. 현재 최소 예제의 [App.kt](example/shared/src/commonMain/kotlin/zone/ien/utils/example/App.kt)는 별도 렌더러 함수 없이 블록 안에 Material `Scaffold`와 `NavDisplay`를 직접 둡니다.
 
 - iOS에서는 `UITabBarController`와 탭마다 하나의 `UINavigationController`가 됩니다. 다른 플랫폼도 탭별 decorated 엔트리를 유지하므로 저장 가능 상태와 ViewModel이 유지됩니다.
 - `sharedBackStack`은 비어 있어도 됩니다. 공유 화면은 항상 탭 바를 숨기고 선택된 탭 위에 push됩니다. `onSharedBack`은 공유 엔트리 하나를 제거합니다. 공유 화면이 보이는 동안 앱이 `selectedTab`을 바꾸면 애니메이션 없이 새 탭으로 옮겨 갑니다.
@@ -324,6 +324,10 @@ NativeTabs(
 - 딥링크 해석은 앱이 합니다. 탭을 선택하고 Kotlin 스택을 목적지 목록으로 교체하거나 확장합니다. 맨 위가 아닌 컨트롤러는 실제로 보일 때 처음 만듭니다.
 
 <a id="4-android와-desktop"></a>
+탭 아이콘에도 Compose `Painter`를 사용할 수 있습니다: `NativeTab(title = "Home", backStack = home, image = homePainter, selectedImage = selectedHomePainter)`. 호스트가 탭 표시 전에 두 이미지를 최대 25×25pt로 준비하고 UIKit template tint를 적용합니다. `image`는 `systemImage`보다 우선하며, `selectedImage`를 생략하면 기본 이미지를 사용합니다. 기존 SF Symbols 생성자와 trailing `onBack` 람다도 유지합니다.
+
+`NativeTabBarTint(color) { NativeTabs(...) { ... } }`로 선택 탭 아이콘·제목 색을 지정할 수 있습니다. 색상이 바뀌면 기존 탭 바에 반영하고, `Color.Unspecified`는 시스템 기본색을 복원합니다. 비선택 탭 색과 바 외형은 UIKit 기본값을 유지합니다.
+
 <a id="scope"></a>
 
 ### Android·Desktop·Web 렌더링
@@ -342,7 +346,7 @@ NativeTabs(
 
 탭 바까지 덮는 바깥 스택이 필요하면 엔트리로 `listOf(NavEntry<NavKey>(TabsKey) { TabsChrome(tabEntries) }) + sharedEntries`를 사용합니다. `TabsKey`와 `TabsChrome`은 앱에서 정의합니다.
 
-아직 composition에 남은 화면 중 가장 최근에 등록한 바·검색 선언이 우선합니다. 새 화면이 선언하지 않으면 나가는 화면의 선언이 잠시 남을 수 있습니다. `systemImage`는 iOS SF Symbol 이름이므로 Android 아이콘은 렌더러에서 정합니다. 메뉴·툴바·검색 렌더링 전체 예제는 [App.kt](example/shared/src/commonMain/kotlin/zone/ien/utils/example/App.kt)에 있습니다.
+아직 composition에 남은 화면 중 가장 최근에 등록한 바·검색 선언이 우선합니다. 새 화면이 선언하지 않으면 나가는 화면의 선언이 잠시 남을 수 있습니다. `systemImage`는 iOS SF Symbol 이름이므로 Android 아이콘은 렌더러에서 정합니다. 최소 도입 예제는 [App.kt](example/shared/src/commonMain/kotlin/zone/ien/utils/example/App.kt)를 참고하세요. 선택 기능인 메뉴·툴바·검색은 샘플에서 생략합니다.
 
 <a id="1단계-엔트리에-화면-정보를-더합니다"></a>
 <a id="2-엔트리와-화면-메타데이터-공통"></a>
@@ -565,7 +569,7 @@ CI는 JVM·Android host·iOS 시뮬레이터·JS·Wasm 테스트와 Android·Des
 
 ## 예제 앱
 
-[예제](example)는 Android·Desktop·iOS가 `App()` 하나를 공유합니다. Home·Gallery·Settings 탭, 일반·staggered 그리드, 탭 바를 숨기거나 유지하는 상세 화면, 공유 Profile 화면, PNG·벡터 제목 이미지, 로그아웃·로그인 루트 전환을 보여줍니다.
+[예제](example)는 Android·Desktop·iOS가 `App()` 하나를 공유합니다. Home·Settings 두 탭과 상세 화면만 두고, 일반 Material 3 `Scaffold` + Navigation 3 `NavDisplay` 앱에 필요한 연결 코드를 `추가:` 주석으로 표시합니다. 탭별 백스택, 화면 제목, 테마와 스크롤 연결, iOS 진입점을 확인할 수 있습니다. 선택적인 로그인·검색·메뉴·제목 이미지·프로세스 간 상태 복원 데모는 생략합니다.
 
 ```bash
 example/run-sample.sh

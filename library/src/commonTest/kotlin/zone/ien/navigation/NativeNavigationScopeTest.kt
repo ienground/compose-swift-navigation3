@@ -14,6 +14,21 @@ import kotlin.test.assertTrue
 
 class NativeNavigationScopeTest {
 
+    @Test
+    fun tabImagesAndLegacyConstructorKeepTheirContracts() {
+        val image = ColorPainter(Color.Black)
+        val selected = ColorPainter(Color.White)
+        val tab = NativeTab(title = "Home", backStack = listOf("home"), image = image, selectedImage = selected)
+        assertSame(image, tab.image)
+        assertSame(selected, tab.selectedImage)
+        var pops = 0
+        val legacy = NativeTab("Home", "house", listOf("home")) { pops++ }
+        assertEquals("house", legacy.systemImage)
+        assertNull(legacy.image)
+        legacy.onBack()
+        assertEquals(1, pops)
+    }
+
     private fun entry(key: String, title: String? = null, hidesTabBar: Boolean = false) =
         NavEntry(key, metadata = nativeScreen(title = title, hidesTabBar = hidesTabBar)) {}
 

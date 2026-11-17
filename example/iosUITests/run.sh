@@ -16,9 +16,6 @@ APP="$DERIVED/Build/Products/Debug-iphonesimulator/Example.app"
 rm -rf "$OUT"; mkdir -p "$OUT/shots"
 
 xcrun simctl boot "$UDID" 2>/dev/null; xcrun simctl bootstatus "$UDID" -b >/dev/null
-# After someone types on the Mac keyboard, iOS treats a hardware keyboard as attached and hides
-# the software keyboard. SearchUITests needs it (keyboard inset), so keep it shown.
-xcrun simctl spawn "$UDID" defaults write com.apple.keyboard.preferences AutomaticMinimizationEnabled -bool NO
 
 echo "Building example app..."
 xcodebuild -project "$ROOT/example/iosApp/iosApp.xcodeproj" -scheme example.iosApp -configuration Debug \
@@ -28,7 +25,7 @@ xcrun simctl terminate "$UDID" zone.ien.utils.example.Example 2>/dev/null
 xcrun simctl install "$UDID" "$APP"
 
 xcrun simctl spawn "$UDID" log stream --level debug --style compact \
-  --predicate 'eventMessage CONTAINS "[ScrollDemo"' > "$OUT/app.log" 2>&1 &
+  --predicate 'process == "Example"' > "$OUT/app.log" 2>&1 &
 LOG_PID=$!
 ( while true; do
     T=$(python3 -c 'import time; print(int(time.time() * 1000))')

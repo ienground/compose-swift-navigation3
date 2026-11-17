@@ -1,5 +1,7 @@
 package zone.ien.navigation
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
@@ -11,19 +13,41 @@ import androidx.navigation3.runtime.rememberDecoratedNavEntries
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 
 /**
+ * Supplies the selected tab icon and label color to [NativeTabs].
+ * [Color.Unspecified] restores the platform tint. Unselected tabs keep their platform colors.
+ */
+@Composable
+public fun NativeTabBarTint(color: Color, content: @Composable () -> Unit) {
+    CompositionLocalProvider(LocalNativeTabBarTint provides color, content = content)
+}
+
+internal val LocalNativeTabBarTint = staticCompositionLocalOf { Color.Unspecified }
+
+/**
  * One tab of [NativeTabs].
  *
  * @param title tab title (tab bar item on iOS, [NativeNavigationScope.tabs] elsewhere).
- * @param systemImage SF Symbol name of the iOS tab bar icon.
+ * @param systemImage SF Symbol name used when [image] is absent.
+ * @param image custom tab icon, rendered as a UIKit template image.
+ * @param selectedImage selected-state icon; omitted uses the default tab image.
  * @param onBack called once per screen popped in this tab. It must remove the last entry of
  *   [backStack], as `NavDisplay`'s `onBack` does.
  */
 public class NativeTab<T : Any>(
     public val title: String,
-    public val systemImage: String,
+    public val systemImage: String = "",
     public val backStack: List<T>,
+    public val image: Painter?,
+    public val selectedImage: Painter? = null,
     public val onBack: () -> Unit = { (backStack as? MutableList<T>)?.removeLastOrNull() },
-)
+) {
+    public constructor(
+        title: String,
+        systemImage: String,
+        backStack: List<T>,
+        onBack: () -> Unit = { (backStack as? MutableList<T>)?.removeLastOrNull() },
+    ) : this(title, systemImage, backStack, image = null, selectedImage = null, onBack = onBack)
+}
 
 /**
  * A navigation stack for [backStack], declared once in common code. Parameters mirror

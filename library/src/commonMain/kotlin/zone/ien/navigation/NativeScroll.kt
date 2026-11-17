@@ -11,6 +11,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -60,7 +63,8 @@ public class NativeScroll internal constructor(
  * 고정된 바를 제외한 화면 콘텐츠의 네이티브 바운스를 처리합니다.
  *
  * 공통 Scaffold의 content 슬롯에 한 번 연결합니다. 개별 스크롤 컨테이너의 Modifier는 변경하지 않습니다.
- * 같은 네이티브 화면에서 중첩해도 바운스를 한 번만 적용하며, 그 밖의 플랫폼에서는 일반 Box로 동작합니다.
+ * 중첩된 Scaffold에서는 안쪽 콘텐츠 영역만 움직여 바깥 프레임 안의 고정 바를 유지합니다.
+ * 그 밖의 플랫폼에서는 일반 Box로 동작합니다.
  *
  * @param modifier 콘텐츠 영역의 배치와 크기
  * @param content 스크롤 콘텐츠
@@ -71,22 +75,32 @@ public fun NativeScrollContent(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val host = LocalNativeScrollHost.current
-    val parentHost = LocalNativeScrollContentHost.current
-    val bounce = if (host != null && host !== parentHost) {
+    val parent = LocalNativeScrollContentOwner.current
+    val owner = remember(host) { host?.let { NativeScrollContentOwner(it) } }
+    DisposableEffect(owner, parent) {
+        val linkedParent = parent?.takeIf { owner != null && it.host === host }
+        linkedParent?.let { it.children++ }
+        onDispose { linkedParent?.let { it.children-- } }
+    }
+    val bounce = if (owner != null) {
         Modifier.graphicsLayer {
-            translationY = host.overscrollOffset.toFloat() * density
+            translationY = if (owner.children == 0) owner.host.overscrollOffset.toFloat() * density else 0f
         }
     } else {
         Modifier
     }
     Box(modifier = modifier.then(bounce)) {
-        CompositionLocalProvider(LocalNativeScrollContentHost provides host) {
+        CompositionLocalProvider(LocalNativeScrollContentOwner provides owner) {
             content()
         }
     }
 }
 
-private val LocalNativeScrollContentHost = staticCompositionLocalOf<NativeScrollHost?> { null }
+private class NativeScrollContentOwner(val host: NativeScrollHost) {
+    var children by mutableIntStateOf(0)
+}
+
+private val LocalNativeScrollContentOwner = staticCompositionLocalOf<NativeScrollContentOwner?> { null }
 
 /**
  * Connects [state] to the platform navigation chrome. Only one container per screen can be

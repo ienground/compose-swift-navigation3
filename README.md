@@ -314,7 +314,7 @@ NativeTabs(
 ) { MaterialChrome() }
 ```
 
-This fragment extends the quick start with your `Settings` route, provider, and `NativeNavigationScope<NavKey>.MaterialChrome()` renderer; see [App.kt](example/shared/src/commonMain/kotlin/zone/ien/utils/example/App.kt) for the complete implementation.
+This fragment extends the quick start with your `Settings` route, provider, and `NativeNavigationScope<NavKey>.MaterialChrome()` renderer; the current minimal [App.kt](example/shared/src/commonMain/kotlin/zone/ien/utils/example/App.kt) puts the Material `Scaffold` and `NavDisplay` directly inside the block instead of using a separate renderer.
 
 - iOS creates a `UITabBarController` with one `UINavigationController` per tab. Each tab's decorated entries retain saveable state and ViewModels on other platforms too.
 - `sharedBackStack` may be empty. Its screens always hide the tab bar and push above the selected tab. `onSharedBack` removes one shared entry. If the app changes `selectedTab` while a shared screen is visible, the shared screens move to the new tab without animation.
@@ -324,6 +324,10 @@ This fragment extends the quick start with your `Settings` route, provider, and 
 - Deep links are parsed by your app. Select the tab and replace/extend its Kotlin stack with all destinations; controllers below the top are created when first shown.
 
 <a id="4-android와-desktop"></a>
+Tab icons can also use Compose `Painter` values: `NativeTab(title = "Home", backStack = home, image = homePainter, selectedImage = selectedHomePainter)`. The host renders both images before the tab appears, fits them within 25×25pt, and uses UIKit template tint. `image` takes precedence over `systemImage`; omitting `selectedImage` uses the default tab image. The existing SF Symbols constructor and trailing `onBack` lambda remain supported.
+
+Wrap `NativeTabs` in `NativeTabBarTint(color) { ... }` to set the selected tab icon and label tint. Color changes update the existing tab bar; `Color.Unspecified` restores the system tint. Unselected tab colors and bar appearance remain controlled by UIKit.
+
 <a id="scope"></a>
 
 ### Rendering on Android, desktop, and web
@@ -342,7 +346,7 @@ The library draws no UI on these platforms. Read these `NativeNavigationScope` v
 
 For an outer stack that covers the tab chrome, use `listOf(NavEntry<NavKey>(TabsKey) { TabsChrome(tabEntries) }) + sharedEntries` as its entries. `TabsKey` and `TabsChrome` belong to your app.
 
-The most recently registered, still-composed screen's bar/search declarations win. An outgoing screen's declarations can remain temporarily when the incoming screen declares none. `systemImage` names are iOS SF Symbols; choose Android icons in your renderer. Menus, toolbars, and search rendering are demonstrated in [App.kt](example/shared/src/commonMain/kotlin/zone/ien/utils/example/App.kt).
+The most recently registered, still-composed screen's bar/search declarations win. An outgoing screen's declarations can remain temporarily when the incoming screen declares none. `systemImage` names are iOS SF Symbols; choose Android icons in your renderer. See [App.kt](example/shared/src/commonMain/kotlin/zone/ien/utils/example/App.kt) for the minimal integration. Optional menus, toolbars, and search are omitted from the sample.
 
 <a id="1단계-엔트리에-화면-정보를-더합니다"></a>
 <a id="2-엔트리와-화면-메타데이터-공통"></a>
@@ -565,7 +569,7 @@ Known boundaries:
 
 ## Example apps
 
-The [example](example) shares one `App()` across Android, desktop, and iOS. It has Home, Gallery, and Settings tabs; grids and staggered grids; detail screens with and without the tab bar; shared Profile screens; PNG/vector title images; and a sign-out/sign-in root switch.
+The [example](example) shares one `App()` across Android, desktop, and iOS. It keeps only Home and Settings tabs plus a detail screen. Comments marked `추가:` identify the integration added to an ordinary Material 3 `Scaffold` + Navigation 3 `NavDisplay` app: native tabs, screen metadata, theme and scroll integration, and the iOS entry point. Optional login, search, menus, title images, and process restoration demos are omitted.
 
 ```bash
 example/run-sample.sh

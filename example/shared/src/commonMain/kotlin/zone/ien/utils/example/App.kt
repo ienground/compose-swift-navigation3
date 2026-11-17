@@ -1,200 +1,88 @@
 package zone.ien.utils.example
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
-import androidx.navigation3.runtime.NavEntry
-import androidx.navigation3.runtime.NavEntryDecorator
 import androidx.navigation3.runtime.NavKey
-import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
-import zone.ien.navigation.NativeBarButton
-import zone.ien.navigation.NativeScrollContent
 import zone.ien.navigation.NativeNavigationFrame
-import zone.ien.navigation.NativeNavigationScope
-import zone.ien.navigation.NativeStack
+import zone.ien.navigation.NativeScrollContent
 import zone.ien.navigation.NativeTab
 import zone.ien.navigation.NativeTabs
+import zone.ien.navigation.nativeScreen
 
-/**
- * The app, shared by every platform: the same back stacks, screens and bar declarations.
- *
- * - iOS (`MainViewController`): native `UITabBarController` / `UINavigationController`. The
- *   `otherPlatforms` chrome below is never called and this function emits no UI.
- * - Android and desktop (`setContent { App() }`): [MaterialChrome] draws what the screens declared
- *   with Material 3 around `NavDisplay`.
- */
-@Composable
-fun App(navigation: AppNavigation = rememberAppNavigation()) {
-    val entryProvider = remember(navigation) { appEntryProvider(navigation) }
-
-    // The theme wraps the app once on Android/desktop and each native screen on iOS.
-    NativeNavigationFrame(frame = { content -> AppTheme { NativeScrollContent { content() } } }) {
-        AppNavigationDeclaration(navigation, entryProvider)
-    }
-}
-
-@Composable
-private fun AppNavigationDeclaration(navigation: AppNavigation, entryProvider: (NavKey) -> NavEntry<NavKey>) {
-    // Signed in: tabs. Signed out: a plain stack. The decorators belong to each branch, so the
-    // state of the branch that leaves is cleared (as when a NavDisplay leaves composition); on iOS
-    // the switch swaps the root controller with a cross-dissolve.
-    if (navigation.signedIn) {
-        NativeTabs(
-            tabs = listOf(
-                NativeTab("Home", "house", navigation.stacks[0]),
-                NativeTab("Gallery", "square.grid.2x2", navigation.stacks[1]),
-                NativeTab("Settings", "gearshape", navigation.stacks[2]),
-            ),
-            selectedTab = navigation.selectedTab,
-            onTabSelected = { navigation.selectedTab = it },
-            // Screens any tab opens (Profile), shown over the selected tab without the tab bar.
-            sharedBackStack = navigation.shared,
-            entryDecorators = rememberAppEntryDecorators(),
-            entryProvider = entryProvider,
-        ) { MaterialChrome() }
-    } else {
-        NativeStack(
-            backStack = navigation.signInStack,
-            entryDecorators = rememberAppEntryDecorators(),
-            entryProvider = entryProvider,
-        ) { MaterialChrome() }
-    }
-}
-
-@Composable
-fun AppTheme(content: @Composable () -> Unit) {
-    MaterialTheme(content = content)
-}
-
-@Composable
-private fun rememberAppEntryDecorators(): List<NavEntryDecorator<NavKey>> = listOf(
-    rememberSaveableStateHolderNavEntryDecorator(),
-    rememberViewModelStoreNavEntryDecorator(),
-)
-
-/**
- * Android / desktop chrome: Material 3 drawn from what the screens declared (`nativeScreen`
- * metadata, `NativeBarItems`, `NativeSearchBar`) and from the tabs, inside the app's frame
- * (`NativeNavigationFrame`). The library draws no Android UI; iOS shows the same declarations in
- * the native bars.
- */
+/** Material 3 + Navigation 3 앱에 네이티브 내비게이션을 연결하는 최소 예제. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NativeNavigationScope<NavKey>.MaterialChrome() {
-    Scaffold(
-        topBar = {
-            Column {
-                TopAppBar(
-                    title = {
-                        val image = titleImage
-                        if (image != null) {
-                            Image(image(), contentDescription = title, modifier = Modifier.height(28.dp))
-                        } else {
-                            Text(title.orEmpty())
-                        }
-                    },
-                    navigationIcon = {
-                        Row {
-                            if (canGoBack) TextButton(onClick = onBack) { Text("Back") }
-                            leading.forEach { BarActionButton(it) }
-                        }
-                    },
-                    actions = { trailing.forEach { BarActionButton(it) } },
-                )
-                search?.let { search ->
-                    OutlinedTextField(
-                        value = search.query,
-                        onValueChange = search.onQueryChange,
-                        placeholder = { Text(search.placeholder) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                    )
-                }
-            }
-        },
-        bottomBar = {
-            Column {
-                if (toolbar.isNotEmpty()) {
-                    Surface(tonalElevation = 3.dp) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                            toolbar.forEach { BarActionButton(it) }
-                        }
-                    }
-                }
-                if (tabBarVisible) NavigationBar {
-                    tabs.forEachIndexed { index, tab ->
-                        NavigationBarItem(
-                            selected = selectedTab == index,
-                            onClick = { onTabSelected(index) },
-                            icon = { Text(tab.title.take(1)) },
-                            label = { Text(tab.title) },
-                        )
-                    }
-                }
-            }
-        },
-    ) { innerPadding ->
-        NavDisplay(entries = entries, modifier = Modifier.padding(innerPadding), onBack = onBack)
-    }
-}
+fun App() {
+    val home = rememberNavBackStack(navigationConfiguration, HomeRoute)
+    val settings = rememberNavBackStack(navigationConfiguration, SettingsRoute)
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val stacks = listOf(home, settings)
+    val openDetail: (Int) -> Unit = { id -> stacks[selectedTab].add(DetailRoute(id)) }
 
-/** Material rendering of a NativeBarButton (the app's choice; the library draws no Android UI). */
-@Composable
-private fun BarActionButton(button: NativeBarButton) {
-    @Composable
-    fun Label() {
-        val image = button.image
-        if (image != null) Icon(image, contentDescription = button.title, modifier = Modifier.size(22.dp))
-        else Text(text = button.title)
-    }
-    if (button.menu.isEmpty()) {
-        TextButton(onClick = button.onClick, enabled = button.enabled) { Label() }
-        return
-    }
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        TextButton(onClick = { expanded = true }, enabled = button.enabled) { Label() }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            button.menu.forEach { action ->
-                val image = action.image
-                DropdownMenuItem(
-                    text = { Text(action.title) },
-                    leadingIcon = if (image == null) null else {
-                        { Icon(image, contentDescription = null, modifier = Modifier.size(22.dp)) }
-                    },
-                    onClick = {
-                        expanded = false
-                        action.onClick()
-                    },
-                )
+    // 추가: iOS의 각 화면에도 기존 앱 테마와 스크롤 바운스를 적용한다.
+    NativeNavigationFrame(frame = { content ->
+        MaterialTheme { NativeScrollContent { content() } }
+    }) {
+        // 추가: iOS는 네이티브 탭·스택을 사용하고, 나머지 플랫폼은 아래 Material UI를 사용한다.
+        NativeTabs<NavKey>(
+            tabs = listOf(
+                NativeTab("Home", "house", home),
+                NativeTab("Settings", "gearshape", settings),
+            ),
+            selectedTab = selectedTab,
+            onTabSelected = { selectedTab = it },
+            entryProvider = entryProvider {
+                // 추가: UIKit이 push 전에 제목을 알 수 있도록 엔트리에 metadata를 선언한다.
+                entry<HomeRoute>(metadata = nativeScreen(title = "Home", largeTitle = true)) {
+                    HomeScreen(onOpenDetail = openDetail)
+                }
+                entry<SettingsRoute>(metadata = nativeScreen(title = "Settings", largeTitle = true)) {
+                    SettingsScreen(onOpenDetail = { openDetail(42) })
+                }
+                entry<DetailRoute>(metadata = { route -> nativeScreen(title = "Detail ${route.id}") }) { route ->
+                    DetailScreen(id = route.id)
+                }
+            },
+        ) {
+            // 기존 Material 3 + NavDisplay 구성. iOS에서는 이 블록을 실행하지 않는다.
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text(text = title.orEmpty()) },
+                        navigationIcon = {
+                            if (canGoBack) TextButton(onClick = onBack) { Text(text = "Back") }
+                        },
+                    )
+                },
+                bottomBar = {
+                    NavigationBar {
+                        tabs.forEachIndexed { index, tab ->
+                            NavigationBarItem(
+                                selected = this@NativeTabs.selectedTab == index,
+                                onClick = { onTabSelected(index) },
+                                icon = { Text(text = tab.title) },
+                            )
+                        }
+                    }
+                },
+            ) { padding ->
+                NavDisplay(entries = entries, onBack = onBack, modifier = Modifier.padding(padding))
             }
         }
     }

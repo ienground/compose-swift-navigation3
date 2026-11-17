@@ -63,7 +63,10 @@ internal class ComposeScreenController(
             val screen = controller as UIViewController
             (screen as? ComposeScreenController)?.hidesTabBar == true || screen.hidesBottomBarWhenPushed
         }
-        if (tabs.tabBarHidden != hidden) tabs.setTabBarHidden(hidden, animated)
+        if (tabs.tabBarHidden != hidden) {
+            // Push의 스냅샷 준비 후 즉시 숨겨 새 화면 아래에 이전 탭 바가 남지 않게 합니다.
+            tabs.setTabBarHidden(hidden, animated && !hidden)
+        }
     }
 
     private var appearance = 0L
