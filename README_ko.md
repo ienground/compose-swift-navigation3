@@ -7,7 +7,7 @@ iOS에서는 Kotlin 백스택을 실제 `UITabBarController`와 `UINavigationCon
 
 라우트, 백스택, 엔트리 제공자, 화면, ViewModel, 루트 `App()`은 공통 코드에 둡니다. 라이브러리는 Kotlin으로 구현되어 별도의 Swift 내비게이션 계층이 필요 없습니다.
 
-> 첫 프리릴리스 버전은 `1.0.0-alpha01`입니다. Maven Central 공개 전에는 아래 소스 또는 로컬 Maven 설치 방법을 사용하세요.
+> 이 문서는 현재 소스 버전 `1.0.0-alpha02-dev10`를 기준으로 합니다. Maven Central에서 확인한 공개 버전은 `1.0.0-alpha01`이며, 아래 배지·메뉴 활성 상태·주요 액션·내비게이션 강조색 등 최신 API는 현재 소스를 로컬 Maven으로 배포하거나 프로젝트 의존성으로 연결해 사용하세요.
 
 <a id="toc"></a>
 
@@ -19,6 +19,9 @@ iOS에서는 Kotlin 백스택을 실제 `UITabBarController`와 `UINavigationCon
 - [기존 Navigation 3 앱에서 옮기기](#migration)
   - [기본 Material 3 앱에 적용하기](#material3-integration)
 - [API](#api)
+  - [내비게이션과 탭 강조색](#navigation-tint)
+  - [메뉴 아이템과 바 버튼](#bars)
+  - [메뉴 항목 속성](#menu-items)
 - [호환성과 한계](#compatibility)
 - [예제 앱](#examples)
 - [빌드와 테스트](#testing)
@@ -34,7 +37,8 @@ iOS에서는 Kotlin 백스택을 실제 `UITabBarController`와 `UINavigationCon
 
 - 네이티브 push/pop 전환, 뒤로 버튼, 취소 가능한 가장자리 스와이프, 뒤로 버튼 길게 누르기 메뉴, 선택한 탭 다시 누르기
 - 탭별 독립 백스택과 화면 상태 유지, 선택된 탭 위에 여는 공유 화면
-- 내비게이션 바 제목, 접히는 큰 제목, 바 버튼, 메뉴, 하단 툴바, `UISearchController` 검색
+- 내비게이션 바 제목, 접히는 큰 제목, 이미지 바 버튼, 배지·주요 액션, 활성 상태와 배지를 갖는 메뉴 항목, 하단 툴바, `UISearchController` 검색
+- Compose 이미지 기반 탭 아이콘, 내비게이션 강조색과 선택 탭 색 지정
 - UIKit 스크롤 물리, 바운스, 상태 바 탭으로 맨 위 이동, 키보드 여백
 - Navigation 3 decorator를 통한 저장 가능 상태와 엔트리별 ViewModel 관리, 선택적인 iOS scene 상태 복원
 - 로그인·메인 흐름처럼 `NativeStack`과 `NativeTabs` 사이 루트 전환
@@ -71,7 +75,7 @@ dependencyResolutionManagement {
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("zone.ien.navigation:navigation:1.0.0-alpha01")
+            implementation("zone.ien.navigation:navigation:1.0.0-alpha02-dev10")
         }
     }
 }
@@ -79,11 +83,11 @@ kotlin {
 
 또는 [예제 모듈](example/shared/build.gradle.kts)처럼 기존 `library` 모듈을 빌드에 포함하고 프로젝트 의존성으로 사용합니다.
 
-Maven Central에 공개된 뒤에는 `mavenLocal()` 없이 `google()`과 `mavenCentral()`만으로 같은 의존성을 사용할 수 있습니다.
+Maven Central 공개 버전을 사용하려면 `mavenLocal()` 없이 `google()`과 `mavenCentral()`을 두고 버전을 `1.0.0-alpha01`로 지정합니다. 공개 버전 목록은 [Maven 메타데이터](https://repo.maven.apache.org/maven2/zone/ien/navigation/navigation/maven-metadata.xml)에서 확인할 수 있습니다. 현재 소스의 최신 API가 그 버전에 모두 포함된 것은 아닙니다.
 
 ### 자동 배포
 
-[배포 워크플로](.github/workflows/publish.yml)는 GitHub Release 또는 프리릴리스를 공개할 때 실행됩니다. `gradle/libs.versions.toml`의 `lib-version-name`과 태그가 일치해야 합니다(첫 태그: `v1.0.0-alpha01`). 같은 릴리스 커밋의 CI 전체가 통과하면 모든 라이브러리 타깃을 서명하고 Maven Central에 업로드한 뒤 자동 공개합니다.
+[배포 워크플로](.github/workflows/publish.yml)는 GitHub Release 또는 프리릴리스를 공개할 때 실행됩니다. `gradle/libs.versions.toml`의 `lib-version-name`과 태그가 일치해야 합니다(현재 소스 기준: `v1.0.0-alpha02-dev10`). 같은 릴리스 커밋의 CI 전체가 통과하면 모든 라이브러리 타깃을 서명하고 Maven Central에 업로드한 뒤 자동 공개합니다.
 
 저장소의 Actions Secrets에 compose-hig와 같은 `SONATYPE_USERNAME`, `SONATYPE_PASSWORD`(Central Portal 토큰), `GPG_KEY`(ASCII 형식의 비밀키), `GPG_PASSWORD`(키 암호)를 등록해야 합니다. Central Portal 계정에는 `zone.ien.navigation` 배포 권한이 있어야 하며, 서명 공개키도 키 서버에 등록되어 있어야 합니다. 워크플로는 Secret 값을 출력하지 않습니다.
 
@@ -94,7 +98,7 @@ Maven Central에 공개된 뒤에는 `mavenLocal()` 없이 `google()`과 `mavenC
 - 아래 Material UI를 사용한다면 Compose Material 3
 - 엔트리별 ViewModel이 필요하다면 `org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3:2.11.0`
 
-라이브러리는 `androidx.navigation3:navigation3-runtime:1.2.0`을 전이 의존성으로 공개하며 `navigation3-ui`나 Material 3에는 의존하지 않습니다. 저장소의 툴체인은 [버전 카탈로그](gradle/libs.versions.toml)와 [호환성](#compatibility)을 참고하세요.
+라이브러리는 `androidx.navigation3:navigation3-runtime:1.2.1`을 전이 의존성으로 공개하며 `navigation3-ui`나 Material 3에는 의존하지 않습니다. 저장소의 툴체인은 [버전 카탈로그](gradle/libs.versions.toml)와 [호환성](#compatibility)을 참고하세요.
 
 <a id="3단계-navdisplay를-nativestack으로-감쌉니다"></a>
 <a id="4단계-ios-진입점을-한-줄로-바꿉니다"></a>
@@ -127,6 +131,7 @@ import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 import zone.ien.navigation.NativeNavigationFrame
 import zone.ien.navigation.NativeStack
+import zone.ien.navigation.NativeScrollContent
 import zone.ien.navigation.nativeContentPadding
 import zone.ien.navigation.nativeScreen
 
@@ -145,7 +150,9 @@ private val navigationConfiguration = SavedStateConfiguration {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App() {
-    NativeNavigationFrame(frame = { content -> MaterialTheme(content = content) }) {
+    NativeNavigationFrame(frame = { content ->
+        MaterialTheme { NativeScrollContent { content() } }
+    }) {
         val backStack = rememberNavBackStack(navigationConfiguration, Home)
         val provider = remember(backStack) {
             entryProvider<NavKey> {
@@ -415,7 +422,8 @@ NativeNavigationFrame(
 | `NativeNavigationScope<T>` | `otherPlatforms`에 전달하는 decorated 엔트리와 바 데이터 |
 | `NativeNavigationFrame`, `LocalNativeScreen` | 앱 전역 providers·frame과 네이티브 화면 여부 |
 | `nativeScreen`, `NavEntry.nativeTitle`, `nativeLargeTitle`, `nativeHidesTabBar`, `nativeTitleImage` | 엔트리 메타데이터와 접근자 |
-| `rememberNativeScroll`, `NativeScroll`, `nativeContentPadding`, `Modifier.nativeScrollExclusion()` | 네이티브 세로 스크롤과 여백 |
+| `rememberNativeScroll`, `NativeScroll`, `NativeScrollContent`, `nativeContentPadding`, `Modifier.nativeScrollExclusion()` | 네이티브 세로 스크롤·콘텐츠 바운스·여백 |
+| `NativeNavigationTint`, `NativeTabBarTint` | 내비게이션 액션과 선택 탭의 강조색 |
 | `NativeBarItems`, `NativeBarButton`, `NativeMenuAction`, `NativeBarContent` | 바 선언과 데이터 |
 | `NativeSearchBar`, `NativeSearch` | 검색 선언과 데이터 |
 | `NativeBarState`, `ProvideNativeBarState` | `NativeStack`·`NativeTabs` 없이 일반 `NavDisplay`의 선언 수집 |
@@ -476,6 +484,34 @@ NativeTabs(
 탭 아이콘에도 Compose `Painter`를 사용할 수 있습니다: `NativeTab(title = "Home", backStack = home, image = homePainter, selectedImage = selectedHomePainter)`. 호스트가 탭 표시 전에 두 이미지를 최대 25×25pt로 준비하고 UIKit template tint를 적용합니다. `image`는 `systemImage`보다 우선하며, `selectedImage`를 생략하면 기본 이미지를 사용합니다. 기존 SF Symbols 생성자와 trailing `onBack` 람다도 유지합니다.
 
 `NativeTabBarTint(color) { NativeTabs(...) { ... } }`로 선택 탭 아이콘·제목 색을 지정할 수 있습니다. 색상이 바뀌면 기존 탭 바에 반영하고, `Color.Unspecified`는 시스템 기본색을 복원합니다. 비선택 탭 색과 바 외형은 UIKit 기본값을 유지합니다.
+
+<a id="navigation-tint"></a>
+
+### 네이티브 내비게이션과 탭 강조색
+
+`NativeNavigationTint`는 iOS 뒤로 버튼·바 액션·툴바에 적용할 강조색, `NativeTabBarTint`는 선택 탭 아이콘·제목 색을 지정합니다. 아래는 기존 앱의 `appAccent`, `AppTheme`, `backStack`, `provider`를 사용하는 부분 예제입니다.
+
+```kotlin
+import zone.ien.navigation.NativeNavigationTint
+import zone.ien.navigation.NativeTabBarTint
+
+NativeNavigationFrame(
+    providers = { content ->
+        NativeNavigationTint(appAccent) {
+            NativeTabBarTint(appAccent) { content() }
+        }
+    },
+    frame = { content -> AppTheme { NativeScrollContent { content() } } },
+) {
+    NativeStack(backStack = backStack, entryProvider = provider) {
+        NavDisplay(entries = entries, onBack = onBack)
+    }
+}
+```
+
+탭 앱은 위 `NativeStack` 자리에 기존 `NativeTabs` 선언을 둡니다. 색은 `Color` 값으로 전달하며 `Color.Unspecified`는 각 호스트의 기본색을 복원합니다. 다른 플랫폼의 UI는 바꾸지 않으므로 앱 테마에서 색을 지정합니다. 비선택 탭 색과 시스템 바 배경·appearance는 덮어쓰지 않습니다.
+
+이 공급자는 화면의 `frame` 안에만 두면 안 됩니다. iOS 내비게이션은 UI 없는 호스트 composition에서 선언되므로 위처럼 `providers`에 두거나 `NativeStack`·`NativeTabs`를 직접 감쌉니다. `MaterialTheme.colorScheme`처럼 화면 테마가 필요한 값을 호스트에서 읽지 말고, 앱이 선택한 강조색을 State나 UI 없는 색상 토큰 공급자로 전달합니다.
 
 <a id="scope"></a>
 
@@ -556,34 +592,133 @@ Column(
 - 스크롤하지 않는 화면은 `Modifier.padding(nativeContentPadding())`을 사용합니다. 바 높이가 이미 포함되므로 `WindowInsets`나 네이티브 화면의 `imePadding()`으로 중복 여백을 주지 않습니다.
 - `animateScrollToItem`, `bringIntoView`처럼 Compose에서 실행한 스크롤도 네이티브 바에 반영합니다.
 
+<a id="content-bounce"></a>
+
+#### 콘텐츠 바운스와 고정 요소
+
+`rememberNativeScroll`은 스크롤 위치와 네이티브 바를 연결하고, `NativeScrollContent`는 끝을 넘어 당길 때 움직일 콘텐츠 영역을 지정합니다. 현재 예제처럼 고정 요소가 없으면 `NativeNavigationFrame.frame`에서 화면 내용을 한 번 감싸면 됩니다.
+
+화면 자체의 Scaffold에 고정 버튼·바가 있다면 **콘텐츠 슬롯만** 감쌉니다. 아래의 `FixedActions`·`ScreenBody`는 앱의 기존 Composable입니다.
+
+```kotlin
+Scaffold(bottomBar = { FixedActions() }) { padding ->
+    NativeScrollContent(modifier = Modifier.padding(padding)) {
+        ScreenBody()
+    }
+}
+```
+
+중첩된 `NativeScrollContent`에서는 안쪽 콘텐츠가 바운스를 소유하므로 바깥 프레임이나 고정 버튼까지 함께 움직이지 않습니다. 이 래퍼는 자동으로 삽입되지 않으며 스크롤 state·`userScrollEnabled`·콘텐츠 여백 연결을 대신하지 않습니다. iOS 외 플랫폼에서는 일반 `Box`로 동작합니다.
+
 <a id="바-버튼-메뉴-툴바"></a>
 <a id="검색"></a>
 <a id="bars"></a>
 
 ### 바 아이템, 메뉴, 검색
 
-화면 상태와 ViewModel을 읽을 수 있도록 액션을 화면 내용 안에 선언합니다.
+화면 Composable 안에서 `NativeBarItems`를 선언합니다. 아래 `EditorBar`는 화면의 상태와 콜백을 받아 바 버튼·메뉴 항목·툴바를 함께 구성하는 예제입니다. 현재 최소 [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt)에는 바 아이템 데모를 넣지 않았으므로, 필요한 화면 내용에서 이 함수를 호출합니다.
 
 ```kotlin
-NativeBarItems(
-    title = if (count > 0) "Detail $id ($count)" else null,   // 선택. nativeScreen의 타이틀을 덮어씁니다
-    trailing = listOf(
-        NativeBarButton("Add one", systemImage = "plus", onClick = viewModel::increment),
-        NativeBarButton(
-            title = "More",
-            systemImage = "ellipsis.circle",
-            menu = listOf(NativeMenuAction("Reset count", destructive = true) { viewModel.reset() }),
+import androidx.compose.runtime.Composable
+import zone.ien.navigation.NativeBarButton
+import zone.ien.navigation.NativeBarItems
+import zone.ien.navigation.NativeMenuAction
+
+@Composable
+fun EditorBar(
+    unreadCount: Int,
+    canSave: Boolean,
+    canDelete: Boolean,
+    onOpenNotifications: () -> Unit,
+    onSave: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    NativeBarItems(
+        trailing = listOf(
+            NativeBarButton(
+                title = "Notifications",
+                systemImage = "bell",
+                badge = unreadCount,
+                onClick = onOpenNotifications,
+            ),
+            NativeBarButton(
+                title = "More",
+                systemImage = "ellipsis.circle",
+                menu = listOf(
+                    NativeMenuAction(
+                        title = "Notifications",
+                        systemImage = "bell",
+                        badge = unreadCount,
+                        onClick = onOpenNotifications,
+                    ),
+                    NativeMenuAction(
+                        title = "Delete",
+                        systemImage = "trash",
+                        destructive = true,
+                        enabled = canDelete,
+                        onClick = onDelete,
+                    ),
+                ),
+            ),
+            NativeBarButton(
+                title = "Save",
+                systemImage = "checkmark",
+                enabled = canSave,
+                isPrimary = true,
+                onClick = onSave,
+            ),
         ),
-    ),
-    toolbar = listOf(
-        NativeBarButton("Decrease", systemImage = "minus.circle", enabled = count > 0, onClick = viewModel::decrement),
-    ),
-)
+        toolbar = listOf(
+            NativeBarButton("Notifications", systemImage = "bell", onClick = onOpenNotifications),
+        ),
+    )
+}
 ```
 
-- `leading`과 `trailing`은 왼쪽에서 오른쪽 순서의 `UIBarButtonItem`이 되며 네이티브 뒤로 버튼은 유지합니다. `menu`가 비어 있지 않으면 버튼의 `onClick` 대신 `UIMenu`를 열고 액션은 `destructive`를 지원합니다.
-- `toolbar`는 해당 화면이 맨 위일 때만 보입니다. `enabled`로 활성 여부를 제어하고, `systemImage`는 SF Symbol, `title`은 접근성 레이블로 사용합니다. 네이티브 버튼은 모양이 바뀔 때만 다시 만듭니다.
-- `NativeBarButton`과 `NativeMenuAction`은 `image: Painter?`도 받습니다. PNG·벡터 리소스는 `painterResource(...)`, `ImageVector`는 `rememberVectorPainter(...)`로 전달합니다. `image`가 `systemImage`보다 우선합니다. iOS는 비율을 유지해 최대 22×22pt로 맞추고 이미지의 알파 모양에 네이티브 tint를 적용합니다. 다른 플랫폼은 렌더러에서 `button.image`를 그릴 수 있습니다. 기존 생성자와 마지막 클릭 람다 호출도 유지됩니다.
+`leading`과 `trailing`은 왼쪽에서 오른쪽 순서이며 네이티브 뒤로 버튼은 유지됩니다. 위 예제는 Save를 마지막에 두어 오른쪽 끝에 표시합니다. `toolbar`는 해당 화면이 맨 위일 때만 표시됩니다. 동적 제목은 `NativeBarItems(title = ...)`로 덮어쓸 수 있지만, push 전환 시작부터 필요한 고정 제목은 `nativeScreen(title = ...)`에 둡니다.
+
+<a id="bar-button-options"></a>
+
+#### 바 버튼: NativeBarButton
+
+| 속성 | 기본값 | 동작 |
+| --- | --- | --- |
+| `title` | 필수 | 텍스트. 이미지가 있으면 접근성 레이블 |
+| `systemImage` | `null` | iOS SF Symbol 이름 |
+| `image` | `null` | Compose `Painter`. 지정하면 `systemImage`보다 우선 |
+| `enabled` | `true` | 버튼 활성 상태 |
+| `badge` | `0` | `0`: 숨김, 양수: 숫자, 음수: 표시점 |
+| `isPrimary` | `false` | UIKit `UIBarButtonItemStyleDone` 강조 스타일. 오른쪽에서 일반 버튼 다음에 배치하면 사이에 간격 추가 |
+| `menu` | 빈 목록 | 비어 있지 않으면 버튼 클릭으로 메뉴를 열고 `onClick`은 호출하지 않음 |
+| `onClick` | 빈 동작 | 메뉴가 없는 활성 버튼을 눌렀을 때 실행 |
+
+iOS 바 버튼 배지는 시스템 `UIButton`과 배지 뷰를 바 아이템에 넣어 표시합니다. `isPrimary`는 UIKit 바 아이템 스타일이며, 배지를 위해 `customView`를 쓰는 버튼에 같은 강조 배경을 보장하는 옵션은 아닙니다. 위 예제처럼 주요 액션과 배지 버튼을 나누어 사용할 수 있습니다.
+
+네이티브 아이템은 제목·이미지·활성 상태·배지·메뉴 등 모양이 바뀔 때만 다시 만듭니다. 클릭 콜백만 바뀌면 기존 아이템을 유지하면서 최신 동작을 실행합니다.
+
+<a id="menu-items"></a>
+
+#### 메뉴 항목: NativeMenuAction
+
+메뉴 아이템 하나는 `NativeMenuAction`, 메뉴 목록은 `NativeBarButton(menu = listOf(...))`로 선언합니다. iOS에서는 각 항목이 `UIAction`, 목록이 `UIMenu`가 됩니다.
+
+| 속성 | 기본값 | 동작 |
+| --- | --- | --- |
+| `title` | 필수 | 메뉴 항목 제목 |
+| `systemImage` | `null` | iOS SF Symbol 이름 |
+| `image` | `null` | Compose `Painter`. 지정하면 `systemImage`보다 우선 |
+| `destructive` | `false` | 삭제 등 파괴적 동작을 시스템 스타일로 표시 |
+| `enabled` | `true` | `false`이면 비활성으로 표시하고 콜백 실행 차단 |
+| `badge` | `0` | `0`: 숨김, 양수: 숫자, 음수: `•`. iOS 메뉴에서는 배지 대신 **부제목**으로 표시 |
+| `onClick` | 필수 | 활성 메뉴 항목을 선택했을 때 실행 |
+
+메뉴 항목은 평면 목록이며 하위 메뉴·구분선·선택 상태 API는 제공하지 않습니다. 부모 버튼이 비활성이면 메뉴 동작도 실행되지 않습니다.
+
+<a id="bar-images"></a>
+
+#### 버튼과 메뉴 이미지
+
+`NativeBarButton`과 `NativeMenuAction`의 `image`에 PNG·벡터 리소스는 `painterResource(...)`, `ImageVector`는 `rememberVectorPainter(...)`로 전달합니다. iOS는 종횡비를 유지해 최대 22×22pt로 맞추고 이미지의 알파 모양에 네이티브 tint를 적용합니다. 기존 생성자와 마지막 클릭 람다 호출도 유지됩니다.
 
 ```kotlin
 NativeBarButton(
@@ -597,7 +732,17 @@ NativeMenuAction(
 ) { performAction() }
 ```
 
-- 화면 선언은 내용이 composition된 뒤 등록되어 push 시작보다 늦습니다. 전환과 함께 보여야 하는 고정 제목은 `nativeScreen(title)`, 상태에 따른 변경은 `NativeBarItems(title)`을 사용합니다.
+`Res.drawable.my_icon`, `myImageVector`, `performAction`은 앱의 리소스·아이콘·동작을 사용합니다.
+
+#### iOS 외 플랫폼에서 그리기
+
+라이브러리는 바 UI를 만들지 않습니다. `NativeNavigationScope.leading`·`trailing`·`toolbar`의 버튼과 `button.menu`의 항목을 앱의 기존 디자인 시스템으로 그립니다. 버튼·항목의 `enabled`, `badge`, `image`, `destructive`, `isPrimary`도 렌더러에서 필요한 형태로 반영합니다. 메뉴가 있는 버튼은 메뉴를 열고, 항목을 선택하면 해당 `NativeMenuAction.onClick`을 호출합니다. SF Symbol은 iOS용이므로 다른 플랫폼의 아이콘은 앱에서 지정합니다.
+
+현재 예제의 Material `TopAppBar`는 제목과 뒤로 버튼만 그립니다. `NativeBarItems`를 화면에 추가하는 것만으로 Android 바에 메뉴가 나타나지는 않습니다. Material 3 앱이면 `DropdownMenu`·`DropdownMenuItem`, 다른 UI 시스템이면 해당 메뉴 컴포넌트를 기존 바의 액션 슬롯에 연결합니다.
+
+<a id="search-field"></a>
+
+#### 검색
 
 검색어와 필터링은 앱이 소유합니다.
 
@@ -692,7 +837,7 @@ struct ContentView: View {
 | 구성 요소 | 설정 |
 | --- | --- |
 | Kotlin / Compose Multiplatform | 2.4.21 / 1.12.2 |
-| Navigation 3 runtime / UI | 1.2.0 / 1.2.0 |
+| Navigation 3 runtime / UI | 1.2.1 / 1.2.0 |
 | Lifecycle / Material 3(예제) | 2.11.0 / 1.12.0-alpha03 |
 | AGP / Gradle | 9.3.1 / 9.7.0 |
 | Gradle 데몬 / 컴파일 | JetBrains Runtime 25 / JDK 17 툴체인 |
