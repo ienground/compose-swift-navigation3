@@ -1,4 +1,4 @@
-package zone.ien.utils.example
+package zone.ien.navigation.example
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ListItem
@@ -28,7 +27,7 @@ fun HomeScreen(onOpenDetail: (Int) -> Unit) {
         contentPadding = scroll.contentPadding,
         modifier = Modifier.fillMaxSize(),
     ) {
-        items((0 until 50).toList()) { id ->
+        items(50) { id ->
             ListItem(
                 headlineContent = { Text(text = "Row $id") },
                 modifier = Modifier.clickable { onOpenDetail(id) },

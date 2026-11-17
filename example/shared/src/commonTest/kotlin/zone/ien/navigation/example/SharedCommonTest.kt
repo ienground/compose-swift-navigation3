@@ -1,4 +1,4 @@
-package zone.ien.utils.example
+package zone.ien.navigation.example
 
 import kotlin.test.Test
 import kotlin.test.assertTrue

@@ -17,6 +17,7 @@ iOS에서는 Kotlin 백스택을 실제 `UITabBarController`와 `UINavigationCon
 - [설치](#installation)
 - [빠른 시작](#quick-start)
 - [기존 Navigation 3 앱에서 옮기기](#migration)
+  - [기본 Material 3 앱에 적용하기](#material3-integration)
 - [API](#api)
 - [호환성과 한계](#compatibility)
 - [예제 앱](#examples)
@@ -227,6 +228,154 @@ UIKit 앱은 반환값을 `window.rootViewController`에 지정합니다. **Open
 
 바를 옮긴 뒤 Android 동작을 확인합니다. iOS 18.x(18.2 이상)와 iOS 26 이상에서 push, 네이티브 뒤로가기, 가장자리 스와이프와 취소, 큰 제목 스크롤, 탭 상태 유지, 공유 화면, 선택적인 상태 복원을 확인합니다.
 
+<a id="material3-integration"></a>
+
+### 기본 Material 3 앱에 적용하기
+
+[App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt)의 Home·Settings 탭 예제를 기준으로 설명합니다. 먼저 [설치](#installation)를 적용합니다. 기존 Material 3 앱에서 Navigation 3를 아직 사용하지 않는다면, [빠른 시작](#quick-start)처럼 `NavKey` 라우트와 `rememberNavBackStack`, `entryProvider`를 구성합니다. 이 라이브러리는 Material 3 화면을 자동으로 분석하지 않으므로 내비게이션 구조와 제목을 명시해야 합니다.
+
+#### 1. 기존 Material 구성을 확인합니다
+
+다음은 기존 `App()`의 UI 부분입니다. `stacks`는 탭별 백스택, `selectedTab`은 선택 상태, `provider`는 기존 엔트리 제공자입니다.
+
+```kotlin
+MaterialTheme {
+    Scaffold(
+        topBar = { TopAppBar(title = { Text(text = "Home") }) },
+        bottomBar = {
+            NavigationBar {
+                listOf("Home", "Settings").forEachIndexed { index, label ->
+                    NavigationBarItem(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        icon = { Text(text = label) },
+                    )
+                }
+            }
+        },
+    ) { padding ->
+        NavDisplay(
+            backStack = stacks[selectedTab],
+            entryProvider = provider,
+            onBack = { stacks[selectedTab].removeLastOrNull() },
+            modifier = Modifier.padding(padding),
+        )
+    }
+}
+```
+
+라우트, 탭별 백스택과 `backStack.add(...)`로 이동하는 코드는 그대로 사용합니다. 예제의 라우트·직렬화 설정은 [AppNavigation.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/AppNavigation.kt)에 있습니다.
+
+#### 2. 기존 Scaffold를 NativeTabs 블록으로 옮깁니다
+
+아래는 적용 후 `App()`입니다. 필요한 import는 [전체 App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt)를 참고하세요. `HomeScreen`, `SettingsScreen`, `DetailScreen`과 라우트는 예제의 기존 선언을 사용합니다.
+
+```kotlin
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun App() {
+    val home = rememberNavBackStack(navigationConfiguration, HomeRoute)
+    val settings = rememberNavBackStack(navigationConfiguration, SettingsRoute)
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val stacks = listOf(home, settings)
+    val openDetail: (Int) -> Unit = { id -> stacks[selectedTab].add(DetailRoute(id)) }
+
+    // 추가: iOS의 각 화면에도 기존 앱 테마와 스크롤 바운스를 적용한다.
+    NativeNavigationFrame(frame = { content ->
+        MaterialTheme { NativeScrollContent { content() } }
+    }) {
+        // 추가: iOS는 네이티브 탭·스택을 사용하고, 나머지 플랫폼은 아래 Material UI를 사용한다.
+        NativeTabs(
+            tabs = listOf(
+                NativeTab("Home", "house", home),
+                NativeTab("Settings", "gearshape", settings),
+            ),
+            selectedTab = selectedTab,
+            onTabSelected = { selectedTab = it },
+            entryProvider = entryProvider {
+                // 추가: UIKit이 push 전에 제목을 알 수 있도록 엔트리에 metadata를 선언한다.
+                entry<HomeRoute>(metadata = nativeScreen(title = "Home", largeTitle = true)) {
+                    HomeScreen(onOpenDetail = openDetail)
+                }
+                entry<SettingsRoute>(metadata = nativeScreen(title = "Settings", largeTitle = true)) {
+                    SettingsScreen(onOpenDetail = { openDetail(42) })
+                }
+                entry<DetailRoute>(metadata = { route -> nativeScreen(title = "Detail ${route.id}") }) { route ->
+                    DetailScreen(id = route.id)
+                }
+            },
+        ) {
+            // 기존 Material 3 + NavDisplay 구성. iOS에서는 이 블록을 실행하지 않는다.
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text(text = title.orEmpty()) },
+                        navigationIcon = {
+                            if (canGoBack) TextButton(onClick = onBack) { Text(text = "Back") }
+                        },
+                    )
+                },
+                bottomBar = {
+                    NavigationBar {
+                        tabs.forEachIndexed { index, tab ->
+                            NavigationBarItem(
+                                selected = selectedTab == index,
+                                onClick = { onTabSelected(index) },
+                                icon = { Text(text = tab.title) },
+                            )
+                        }
+                    }
+                },
+            ) { padding ->
+                NavDisplay(entries = entries, onBack = onBack, modifier = Modifier.padding(padding))
+            }
+        }
+    }
+}
+```
+
+- 기존 `MaterialTheme` 또는 앱 테마를 `NativeNavigationFrame.frame`으로 옮깁니다. `NativeScrollContent`는 iOS 스크롤 바운스를 화면 콘텐츠에 적용합니다.
+- `NativeTabs`에는 기존 백스택과 탭 선택 상태를 전달하고, 엔트리에 `nativeScreen` 제목을 추가합니다. `house`·`gearshape`는 iOS SF Symbols 이름이며 Material 아이콘은 기존 `NavigationBarItem`에서 그립니다.
+- 마지막 블록은 `otherPlatforms`입니다. Android·Desktop 등에서는 기존 `Scaffold`가 실행됩니다. 블록의 `entries`, `onBack`, `title`, `canGoBack`, `tabs`, `onTabSelected`를 사용하고, `NavDisplay`에는 `backStack`·`entryProvider` 대신 `entries`를 넘깁니다.
+- iOS에서는 이 블록 대신 실제 UIKit 탭 바·내비게이션 바를 사용합니다. 화면 안에도 별도 `TopAppBar`가 있다면 `if (!LocalNativeScreen.current)`로 감싸 중복 표시를 막습니다.
+- 탭 없는 앱은 [빠른 시작](#quick-start)의 `NativeStack(backStack, entryProvider = provider) { ... }`을 사용합니다. 엔트리별 ViewModel decorator를 이미 쓴다면 `NativeTabs` 또는 `NativeStack`의 `entryDecorators`로 옮깁니다.
+
+#### 3. 화면의 스크롤과 여백을 연결합니다
+
+기존 `LazyColumn`의 state를 재사용하고 두 값을 연결합니다. 아래 코드는 `HomeScreen(onOpenDetail)`의 본문이며 import를 포함한 전체 구현은 [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/Screens.kt)에 있습니다.
+
+```kotlin
+val state = rememberLazyListState()
+val scroll = rememberNativeScroll(state)
+LazyColumn(
+    state = state,
+    userScrollEnabled = scroll.userScrollEnabled,
+    contentPadding = scroll.contentPadding,
+    modifier = Modifier.fillMaxSize(),
+) {
+    items(50) { id ->
+        ListItem(
+            headlineContent = { Text(text = "Row $id") },
+            modifier = Modifier.clickable { onOpenDetail(id) },
+        )
+    }
+}
+```
+
+스크롤하지 않는 화면은 `Modifier.padding(nativeContentPadding())`을 적용합니다. Android 등에서는 이 네이티브 여백이 0이므로 위 `Scaffold`의 `padding`을 그대로 사용합니다. iOS에서는 네이티브 바·키보드 여백을 제공하므로 시스템 바 여백이나 `imePadding()`을 다시 더하지 않습니다. 자세한 연결 방법은 [스크롤과 콘텐츠 여백](#scroll)을 참고하세요.
+
+#### 4. iOS 진입점을 바꿉니다
+
+기존 `ComposeUIViewController { App() }`를 다음으로 바꿉니다. Android·Desktop 진입점은 계속 `App()`을 호출합니다.
+
+```kotlin
+import zone.ien.navigation.NativeNavigationViewController
+
+fun MainViewController() = NativeNavigationViewController { App() }
+```
+
+SwiftUI의 기존 `UIViewControllerRepresentable`은 이 반환값을 그대로 사용하고 `.ignoresSafeArea()`로 붙입니다([빠른 시작의 브리지](#quick-start)). 적용 후 Android의 Material 바와 뒤로가기, iOS의 탭 전환·상세 push·뒤로 버튼·가장자리 스와이프·스크롤을 확인합니다.
+
 <a id="지켜야-할-규칙"></a>
 <a id="테마와-앱-전역-compositionlocal"></a>
 <a id="composition"></a>
@@ -314,7 +463,7 @@ NativeTabs(
 ) { MaterialChrome() }
 ```
 
-이 부분 예제는 빠른 시작에 앱의 `Settings` 라우트, 제공자, `NativeNavigationScope<NavKey>.MaterialChrome()` 렌더러를 더한 것입니다. 현재 최소 예제의 [App.kt](example/shared/src/commonMain/kotlin/zone/ien/utils/example/App.kt)는 별도 렌더러 함수 없이 블록 안에 Material `Scaffold`와 `NavDisplay`를 직접 둡니다.
+이 부분 예제는 빠른 시작에 앱의 `Settings` 라우트, 제공자, `NativeNavigationScope<NavKey>.MaterialChrome()` 렌더러를 더한 것입니다. 현재 최소 예제의 [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt)는 별도 렌더러 함수 없이 블록 안에 Material `Scaffold`와 `NavDisplay`를 직접 둡니다.
 
 - iOS에서는 `UITabBarController`와 탭마다 하나의 `UINavigationController`가 됩니다. 다른 플랫폼도 탭별 decorated 엔트리를 유지하므로 저장 가능 상태와 ViewModel이 유지됩니다.
 - `sharedBackStack`은 비어 있어도 됩니다. 공유 화면은 항상 탭 바를 숨기고 선택된 탭 위에 push됩니다. `onSharedBack`은 공유 엔트리 하나를 제거합니다. 공유 화면이 보이는 동안 앱이 `selectedTab`을 바꾸면 애니메이션 없이 새 탭으로 옮겨 갑니다.
@@ -346,7 +495,7 @@ NativeTabs(
 
 탭 바까지 덮는 바깥 스택이 필요하면 엔트리로 `listOf(NavEntry<NavKey>(TabsKey) { TabsChrome(tabEntries) }) + sharedEntries`를 사용합니다. `TabsKey`와 `TabsChrome`은 앱에서 정의합니다.
 
-아직 composition에 남은 화면 중 가장 최근에 등록한 바·검색 선언이 우선합니다. 새 화면이 선언하지 않으면 나가는 화면의 선언이 잠시 남을 수 있습니다. `systemImage`는 iOS SF Symbol 이름이므로 Android 아이콘은 렌더러에서 정합니다. 최소 도입 예제는 [App.kt](example/shared/src/commonMain/kotlin/zone/ien/utils/example/App.kt)를 참고하세요. 선택 기능인 메뉴·툴바·검색은 샘플에서 생략합니다.
+아직 composition에 남은 화면 중 가장 최근에 등록한 바·검색 선언이 우선합니다. 새 화면이 선언하지 않으면 나가는 화면의 선언이 잠시 남을 수 있습니다. `systemImage`는 iOS SF Symbol 이름이므로 Android 아이콘은 렌더러에서 정합니다. 최소 도입 예제는 [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt)를 참고하세요. 선택 기능인 메뉴·툴바·검색은 샘플에서 생략합니다.
 
 <a id="1단계-엔트리에-화면-정보를-더합니다"></a>
 <a id="2-엔트리와-화면-메타데이터-공통"></a>

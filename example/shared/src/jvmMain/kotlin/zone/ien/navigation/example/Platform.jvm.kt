@@ -1,4 +1,4 @@
-package zone.ien.utils.example
+package zone.ien.navigation.example
 
 class JVMPlatform : Platform {
     override val name: String = "Java ${System.getProperty("java.version")}"

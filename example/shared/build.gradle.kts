@@ -12,7 +12,7 @@ kotlin {
     jvmToolchain(17)
 
     android {
-        namespace = "zone.ien.utils.example.shared"
+        namespace = "zone.ien.navigation.example.shared"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
 

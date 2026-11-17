@@ -1,4 +1,4 @@
-package zone.ien.utils.example
+package zone.ien.navigation.example
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -15,7 +15,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
@@ -40,7 +39,7 @@ fun App() {
         MaterialTheme { NativeScrollContent { content() } }
     }) {
         // 추가: iOS는 네이티브 탭·스택을 사용하고, 나머지 플랫폼은 아래 Material UI를 사용한다.
-        NativeTabs<NavKey>(
+        NativeTabs(
             tabs = listOf(
                 NativeTab("Home", "house", home),
                 NativeTab("Settings", "gearshape", settings),
@@ -74,7 +73,7 @@ fun App() {
                     NavigationBar {
                         tabs.forEachIndexed { index, tab ->
                             NavigationBarItem(
-                                selected = this@NativeTabs.selectedTab == index,
+                                selected = selectedTab == index,
                                 onClick = { onTabSelected(index) },
                                 icon = { Text(text = tab.title) },
                             )

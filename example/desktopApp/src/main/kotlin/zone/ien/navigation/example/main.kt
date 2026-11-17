@@ -1,4 +1,4 @@
-package zone.ien.utils.example
+package zone.ien.navigation.example
 
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application

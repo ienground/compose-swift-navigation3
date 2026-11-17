@@ -19,7 +19,7 @@ dependencies {
 
 compose.desktop {
     application {
-        mainClass = "zone.ien.utils.example.MainKt"
+        mainClass = "zone.ien.navigation.example.MainKt"
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)

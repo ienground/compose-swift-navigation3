@@ -18,7 +18,7 @@ class ExampleAppTestCase: XCTestCase {
 
     /// 각 테스트는 새 앱 프로세스의 Home에서 시작한다.
     func launch(_ arguments: [String] = []) {
-        app = XCUIApplication(bundleIdentifier: "zone.ien.utils.example.Example")
+        app = XCUIApplication(bundleIdentifier: "zone.ien.navigation.example.Example")
         app.launchArguments = arguments
         app.launch()
         pause(3)

@@ -21,7 +21,7 @@ echo "Building example app..."
 xcodebuild -project "$ROOT/example/iosApp/iosApp.xcodeproj" -scheme example.iosApp -configuration Debug \
   -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath "$DERIVED" build > "$OUT/app-build.log" 2>&1 \
   || { echo "example app build failed: $OUT/app-build.log"; exit 1; }
-xcrun simctl terminate "$UDID" zone.ien.utils.example.Example 2>/dev/null
+xcrun simctl terminate "$UDID" zone.ien.navigation.example.Example 2>/dev/null
 xcrun simctl install "$UDID" "$APP"
 
 xcrun simctl spawn "$UDID" log stream --level debug --style compact \
