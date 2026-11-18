@@ -60,3 +60,11 @@ kotlin {
 dependencies {
     androidRuntimeClasspath(libs.compose.uiTooling)
 }
+
+// CI에서는 라이브러리와 같은 부팅된 시뮬레이터를 사용한다.
+tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
+    providers.gradleProperty("iosSimulatorDevice").orNull?.let {
+        device.set(it)
+        standalone.set(false)
+    }
+}

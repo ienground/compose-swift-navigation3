@@ -123,4 +123,5 @@ mavenPublishing {
 // Compose UI 테스트는 부팅된 시뮬레이터의 앱 환경에서 실행합니다.
 tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
     standalone.set(false)
+    providers.gradleProperty("iosSimulatorDevice").orNull?.let { device.set(it) }
 }
