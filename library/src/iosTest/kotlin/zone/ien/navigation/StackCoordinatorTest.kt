@@ -20,6 +20,10 @@ import platform.UIKit.UITabBarController
 import platform.UIKit.UINavigationController
 import platform.UIKit.UIViewController
 import platform.UIKit.hidesBottomBarWhenPushed
+import platform.UIKit.UIScreen
+import platform.UIKit.UIWindow
+import platform.UIKit.transitionCoordinator
+import kotlinx.cinterop.ExperimentalForeignApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -283,7 +287,7 @@ class StackCoordinatorTest {
     }
 
     @Test
-    fun sharedPushHidesImmediatelyAfterTransitionPreparation() {
+    fun sharedPushWithoutActiveTransitionHidesTabBarImmediately() {
         val (stack, navigation) = coordinator()
         val tabs = RecordingTabs()
         tabs.setViewControllers(listOf(navigation), animated = false)
@@ -297,28 +301,72 @@ class StackCoordinatorTest {
             animated = true,
         )
         assertTrue(tabs.tabBarHidden)
-        assertTrue(tabs.changes.contains(true to false), "상세 화면의 push와 별개로 탭 바 숨김 애니메이션을 지연하면 안 됩니다.")
+        assertTrue(tabs.changes.contains(true to false), "실제 전환이 없으면 탭 바를 즉시 숨겨야 합니다.")
         assertFalse(tabs.changes.any { (hidden, animated) -> hidden && animated })
         stack.dispose()
     }
 
+    private class RecordingNavigation : UINavigationController(nibName = null, bundle = null) {
+        var pushedWithHiddenBar: Boolean? = null
+        override fun pushViewController(viewController: UIViewController, animated: Boolean) {
+            pushedWithHiddenBar = viewController.hidesBottomBarWhenPushed
+            super.pushViewController(viewController, animated)
+        }
+    }
+
     @Test
-    fun sharedPushHidesTheTabBarWithoutHidesBottomBarWhenPushed() {
-        val (stack, navigation) = coordinator()
+    fun sharedPushLeavesLargeTitleTransitionIndependentOfTabBarPolicy() {
+        val navigation = RecordingNavigation()
+        val stack = StackCoordinator(navigation, ContentLeases())
         val tabs = UITabBarController()
         tabs.setViewControllers(listOf(navigation), animated = false)
         stack.show(own = listOf("home"), shared = emptyList())
         stack.show(own = listOf("home"), shared = listOf("profile"))
         navigation.topViewController!!.viewWillAppear(false)
 
-        assertFalse(navigation.topViewController!!.hidesBottomBarWhenPushed,
-            "push와 함께 이 플래그를 켜면 이전 화면의 큰 제목이 먼저 접힌다")
+        assertEquals(false, navigation.pushedWithHiddenBar, "UIKit이 push 중 큰 제목을 먼저 접는 정책을 설정하지 않습니다.")
+        assertFalse(navigation.topViewController!!.hidesBottomBarWhenPushed)
         assertTrue(tabs.tabBarHidden, "탭 바는 UITabBarController에서 숨긴다")
         navigation.popViewControllerAnimated(false)
         navigation.reportShown()
         navigation.topViewController!!.viewWillAppear(false)
         assertFalse(tabs.tabBarHidden, "루트로 돌아오면 탭 바를 복원한다")
         stack.dispose()
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    @Test
+    fun sharedPushHidesTabBarAfterTheAnimatedTransition() {
+        val (stack, navigation) = coordinator()
+        val tabs = UITabBarController()
+        tabs.setViewControllers(listOf(navigation), animated = false)
+        stack.update(
+            listOf(NavEntry("home", metadata = nativeScreen(title = "Home", largeTitle = true)) {}),
+            onBack = {},
+        )
+        val window = UIWindow(frame = UIScreen.mainScreen.bounds)
+        window.rootViewController = tabs
+        window.makeKeyAndVisible()
+        try {
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.10))
+            stack.update(
+                listOf(NavEntry("home", metadata = nativeScreen(title = "Home", largeTitle = true)) {}),
+                onBack = {},
+                shared = listOf(entry("detail")),
+            )
+            assertNotNull(navigation.transitionCoordinator, "화면에 연결된 UIKit push가 시작되어야 합니다.")
+            assertFalse(tabs.tabBarHidden, "나가는 큰 제목이 움직이는 동안 탭 바 여백을 유지해야 합니다.")
+            repeat(20) {
+                if (!tabs.tabBarHidden) {
+                    NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.05))
+                }
+            }
+            assertTrue(tabs.tabBarHidden, "push 완료 후 상세 화면에서 탭 바가 숨겨져야 합니다.")
+        } finally {
+            window.hidden = true
+            window.rootViewController = null
+            stack.dispose()
+        }
     }
 
     @Test

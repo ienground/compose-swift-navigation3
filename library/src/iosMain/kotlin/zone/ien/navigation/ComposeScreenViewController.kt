@@ -19,6 +19,7 @@ import platform.UIKit.hidesBottomBarWhenPushed
 import platform.UIKit.navigationController
 import platform.UIKit.navigationItem
 import platform.UIKit.tabBarController
+import platform.UIKit.transitionCoordinator
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
@@ -49,7 +50,7 @@ internal class ComposeScreenController(
     val backHandling = NativeBackHandling(this)
     private val keyboardInset = KeyboardInset(proxy.scrollView)
 
-    /** 엔트리의 탭 바 숨김 요청. UINavigationController의 제목 전환과 별도로 적용한다. */
+    /** 엔트리의 탭 바 숨김 요청. 제목 전환과 독립적으로 반영한다. */
     var hidesTabBar: Boolean = false
 
     fun updateTabBarVisibility(animated: Boolean, onlyIfSelected: Boolean = false) {
@@ -63,12 +64,32 @@ internal class ComposeScreenController(
             val screen = controller as UIViewController
             (screen as? ComposeScreenController)?.hidesTabBar == true || screen.hidesBottomBarWhenPushed
         }
-        if (tabs.tabBarHidden != hidden) {
-            // Push의 스냅샷 준비 후 즉시 숨겨 새 화면 아래에 이전 탭 바가 남지 않게 합니다.
-            tabs.setTabBarHidden(hidden, animated && !hidden)
+        if (tabs.tabBarHidden == hidden) return
+        val transition = navigation.transitionCoordinator
+        if (hidden && animated && transition != null) {
+            if (tabBarHidePending) return
+            // 전환 중에는 탭 바 여백을 유지하고 화면과 함께 바만 페이드한다.
+            val tabBar = tabs.tabBar
+            val initialAlpha = tabBar.alpha
+            tabBarHidePending = true
+            val queued = transition.animateAlongsideTransitionInView(
+                view = tabBar,
+                animation = { tabBar.alpha = 0.0 },
+                completion = {
+                    tabBarHidePending = false
+                    if (navigation.topViewController == this) {
+                        updateTabBarVisibility(animated = false, onlyIfSelected = true)
+                    }
+                    tabBar.alpha = initialAlpha
+                },
+            )
+            if (queued) return
+            tabBarHidePending = false
         }
+        tabs.setTabBarHidden(hidden, animated && !hidden)
     }
 
+    private var tabBarHidePending = false
     private var appearance = 0L
 
     private val composeController = ComposeUIViewController {
@@ -123,7 +144,7 @@ internal class ComposeScreenController(
         super.viewWillAppear(animated)
         val currentAppearance = ++appearance
         if (animated) {
-            // UIKit이 전환 스냅샷을 준비한 뒤 탭 바를 숨겨야 큰 제목이 먼저 접히지 않는다.
+            // UIKit이 전환 코디네이터를 설치한 뒤 표시 상태를 동기화한다.
             dispatch_async(dispatch_get_main_queue()) {
                 if (appearance == currentAppearance) updateTabBarVisibility(animated = true)
             }
@@ -192,7 +213,6 @@ internal class EntryScreen(
         } else {
             UINavigationItemLargeTitleDisplayMode.UINavigationItemLargeTitleDisplayModeNever
         }
-        // hidesBottomBarWhenPushed는 탭 바와 함께 이전 화면의 큰 제목도 먼저 접는다.
         controller.hidesTabBar = shared || entry.nativeHidesTabBar
     }
 }
