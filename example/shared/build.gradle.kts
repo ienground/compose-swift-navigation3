@@ -12,7 +12,7 @@ kotlin {
     jvmToolchain(17)
 
     android {
-        namespace = "zone.ien.utils.example.shared"
+        namespace = "zone.ien.navigation.example.shared"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
 
@@ -47,14 +47,9 @@ kotlin {
             implementation(libs.compose.foundation)
             implementation(libs.compose.ui)
             implementation(libs.compose.material3)
-            implementation(libs.compose.components.resources)
             implementation(libs.compose.uiToolingPreview)
 
-            implementation(libs.androidx.lifecycle.viewmodelCompose)
-            implementation(libs.androidx.lifecycle.runtimeCompose)
-            implementation(libs.androidx.lifecycle.viewmodelNavigation3)
             implementation(libs.navigation3.ui)
-            implementation(libs.androidx.navigationevent.compose)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -66,6 +61,10 @@ dependencies {
     androidRuntimeClasspath(libs.compose.uiTooling)
 }
 
-compose.resources {
-    packageOfResClass = "zone.ien.utils.example.resources"
+// CI에서는 라이브러리와 같은 부팅된 시뮬레이터를 사용한다.
+tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
+    providers.gradleProperty("iosSimulatorDevice").orNull?.let {
+        device.set(it)
+        standalone.set(false)
+    }
 }

@@ -7,7 +7,7 @@ On iOS, the library connects your Kotlin back stacks to real `UITabBarController
 
 Routes, back stacks, entry providers, screens, ViewModels, and the root `App()` stay in common code. The library is implemented in Kotlin; it requires no Swift navigation layer.
 
-> The first prerelease version is `1.0.0-alpha01`. Until it is published to Maven Central, use the source or local Maven installation below.
+> This README describes the current source version, `1.0.0-alpha02-dev10`. The version verified on Maven Central is `1.0.0-alpha01`. For the latest APIs below, including badges, menu enabled state, primary actions, and navigation tint, publish the current source to local Maven or use a project dependency.
 
 <a id="toc"></a>
 
@@ -17,7 +17,11 @@ Routes, back stacks, entry providers, screens, ViewModels, and the root `App()` 
 - [Installation](#installation)
 - [Quick start](#quick-start)
 - [Migrating an existing Navigation 3 app](#migration)
+  - [Adding the library to a basic Material 3 app](#material3-integration)
 - [API](#api)
+  - [Navigation and tab tint](#navigation-tint)
+  - [Menu items and bar buttons](#bars)
+  - [Menu-item properties](#menu-items)
 - [Compatibility and limitations](#compatibility)
 - [Example apps](#examples)
 - [Build and test](#testing)
@@ -33,7 +37,8 @@ Routes, back stacks, entry providers, screens, ViewModels, and the root `App()` 
 
 - Native push/pop transitions, back buttons, cancellable edge-swipe back, back-button history menus, and tab reselection.
 - Independent tab stacks with retained screen state; shared screens can be pushed above any selected tab.
-- Navigation bar titles, collapsing large titles, bar buttons, menus, bottom toolbars, and `UISearchController` search.
+- Navigation bar titles, collapsing large titles, image bar buttons, badges and primary actions, menu items with enabled state and badges, bottom toolbars, and `UISearchController` search.
+- Compose image tab icons, navigation tint, and selected-tab tint.
 - Vertical scrolling backed by UIKit physics, bounce, scroll-to-top, and keyboard insets.
 - Navigation 3 decorators for saveable state and per-entry ViewModels; optional iOS scene restoration.
 - Root switching between `NativeStack` and `NativeTabs`, such as sign-in and main flows.
@@ -70,7 +75,7 @@ dependencyResolutionManagement {
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("zone.ien.navigation:navigation:1.0.0-alpha01")
+            implementation("zone.ien.navigation:navigation:1.0.0-alpha02-dev10")
         }
     }
 }
@@ -78,11 +83,11 @@ kotlin {
 
 Alternatively, include the existing `library` module in your build and use a project dependency, as the [example module](example/shared/build.gradle.kts) does.
 
-Once published to Maven Central, the same dependency works with `google()` and `mavenCentral()` alone, without `mavenLocal()`.
+To use the Maven Central release, keep `google()` and `mavenCentral()`, omit `mavenLocal()`, and specify version `1.0.0-alpha01`. Check the [Maven metadata](https://repo.maven.apache.org/maven2/zone/ien/navigation/navigation/maven-metadata.xml) for published versions. That release does not contain every API in the current source.
 
 ### Automated publishing
 
-The [publishing workflow](.github/workflows/publish.yml) runs when a GitHub Release or prerelease is published. Its tag must match `lib-version-name` in `gradle/libs.versions.toml` (first tag: `v1.0.0-alpha01`). After the full CI passes for the same release commit, it signs all library targets, uploads them to Maven Central, and automatically releases them.
+The [publishing workflow](.github/workflows/publish.yml) runs when a GitHub Release or prerelease is published. Its tag must match `lib-version-name` in `gradle/libs.versions.toml` (for the current source: `v1.0.0-alpha02-dev10`). After the full CI passes for the same release commit, it signs all library targets, uploads them to Maven Central, and automatically releases them.
 
 Configure the same Actions Secrets as compose-hig: `SONATYPE_USERNAME`, `SONATYPE_PASSWORD` (Central Portal token), `GPG_KEY` (ASCII-armored private key), and `GPG_PASSWORD` (key passphrase). The Central Portal account must have permission to publish `zone.ien.navigation`, and the signing public key must be available on a key server. The workflow does not print secret values.
 
@@ -93,7 +98,7 @@ Your app also needs:
 - Compose Material 3 if your app uses the Material UI shown below.
 - `org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3:2.11.0` if you need per-entry ViewModels.
 
-The library exposes `androidx.navigation3:navigation3-runtime:1.2.0` transitively and does not depend on `navigation3-ui` or Material 3. See the [version catalog](gradle/libs.versions.toml) and [compatibility](#compatibility) for the repository's toolchain.
+The library exposes `androidx.navigation3:navigation3-runtime:1.2.1` transitively and does not depend on `navigation3-ui` or Material 3. See the [version catalog](gradle/libs.versions.toml) and [compatibility](#compatibility) for the repository's toolchain.
 
 <a id="3단계-navdisplay를-nativestack으로-감쌉니다"></a>
 <a id="4단계-ios-진입점을-한-줄로-바꿉니다"></a>
@@ -126,6 +131,7 @@ import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 import zone.ien.navigation.NativeNavigationFrame
 import zone.ien.navigation.NativeStack
+import zone.ien.navigation.NativeScrollContent
 import zone.ien.navigation.nativeContentPadding
 import zone.ien.navigation.nativeScreen
 
@@ -144,7 +150,9 @@ private val navigationConfiguration = SavedStateConfiguration {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App() {
-    NativeNavigationFrame(frame = { content -> MaterialTheme(content = content) }) {
+    NativeNavigationFrame(frame = { content ->
+        MaterialTheme { NativeScrollContent { content() } }
+    }) {
         val backStack = rememberNavBackStack(navigationConfiguration, Home)
         val provider = remember(backStack) {
             entryProvider<NavKey> {
@@ -227,6 +235,154 @@ Keep your routes, navigator, back stacks, entry provider, ViewModels, and screen
 
 Check Android behavior after moving the chrome. On iOS, test push, native back, edge swipe and cancellation, large-title scrolling, tab state retention, shared screens, and optional restoration on both iOS 18.x (18.2+) and iOS 26+.
 
+<a id="material3-integration"></a>
+
+### Adding the library to a basic Material 3 app
+
+This walkthrough follows the Home and Settings tabs in [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt). Complete [installation](#installation) first. If your Material 3 app does not use Navigation 3 yet, add `NavKey` routes, `rememberNavBackStack`, and an `entryProvider` as shown in [Quick Start](#quick-start). The library does not inspect Material 3 screens automatically; declare the navigation structure and titles explicitly.
+
+#### 1. Identify the existing Material layout
+
+This fragment is the UI portion of an existing `App()`. `stacks` contains the per-tab back stacks, `selectedTab` is the selection state, and `provider` is the existing entry provider.
+
+```kotlin
+MaterialTheme {
+    Scaffold(
+        topBar = { TopAppBar(title = { Text(text = "Home") }) },
+        bottomBar = {
+            NavigationBar {
+                listOf("Home", "Settings").forEachIndexed { index, label ->
+                    NavigationBarItem(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        icon = { Text(text = label) },
+                    )
+                }
+            }
+        },
+    ) { padding ->
+        NavDisplay(
+            backStack = stacks[selectedTab],
+            entryProvider = provider,
+            onBack = { stacks[selectedTab].removeLastOrNull() },
+            modifier = Modifier.padding(padding),
+        )
+    }
+}
+```
+
+Keep the routes, per-tab back stacks, and navigation calls such as `backStack.add(...)`. The sample's route and serialization declarations are in [AppNavigation.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/AppNavigation.kt).
+
+#### 2. Move the existing Scaffold into NativeTabs
+
+Here is the updated `App()`. See the [complete App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt) for imports. It uses the sample's existing `HomeScreen`, `SettingsScreen`, `DetailScreen`, and route declarations.
+
+```kotlin
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun App() {
+    val home = rememberNavBackStack(navigationConfiguration, HomeRoute)
+    val settings = rememberNavBackStack(navigationConfiguration, SettingsRoute)
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val stacks = listOf(home, settings)
+    val openDetail: (Int) -> Unit = { id -> stacks[selectedTab].add(DetailRoute(id)) }
+
+    // Apply the existing app theme and scroll bounce to each iOS screen.
+    NativeNavigationFrame(frame = { content ->
+        MaterialTheme { NativeScrollContent { content() } }
+    }) {
+        // Use native tabs and stacks on iOS, and the Material UI below elsewhere.
+        NativeTabs(
+            tabs = listOf(
+                NativeTab("Home", "house", home),
+                NativeTab("Settings", "gearshape", settings),
+            ),
+            selectedTab = selectedTab,
+            onTabSelected = { selectedTab = it },
+            entryProvider = entryProvider {
+                // Declare entry metadata so UIKit knows the title before pushing.
+                entry<HomeRoute>(metadata = nativeScreen(title = "Home", largeTitle = true)) {
+                    HomeScreen(onOpenDetail = openDetail)
+                }
+                entry<SettingsRoute>(metadata = nativeScreen(title = "Settings", largeTitle = true)) {
+                    SettingsScreen(onOpenDetail = { openDetail(42) })
+                }
+                entry<DetailRoute>(metadata = { route -> nativeScreen(title = "Detail ${route.id}") }) { route ->
+                    DetailScreen(id = route.id)
+                }
+            },
+        ) {
+            // Existing Material 3 + NavDisplay layout. This block does not run on iOS.
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text(text = title.orEmpty()) },
+                        navigationIcon = {
+                            if (canGoBack) TextButton(onClick = onBack) { Text(text = "Back") }
+                        },
+                    )
+                },
+                bottomBar = {
+                    NavigationBar {
+                        tabs.forEachIndexed { index, tab ->
+                            NavigationBarItem(
+                                selected = selectedTab == index,
+                                onClick = { onTabSelected(index) },
+                                icon = { Text(text = tab.title) },
+                            )
+                        }
+                    }
+                },
+            ) { padding ->
+                NavDisplay(entries = entries, onBack = onBack, modifier = Modifier.padding(padding))
+            }
+        }
+    }
+}
+```
+
+- Move the existing `MaterialTheme` or app theme to `NativeNavigationFrame.frame`. `NativeScrollContent` applies iOS scroll bounce to the screen content.
+- Pass the existing back stacks and tab selection state to `NativeTabs`, and add `nativeScreen` titles to entries. `house` and `gearshape` are iOS SF Symbols names; keep rendering Material icons in the existing `NavigationBarItem`.
+- The trailing block is `otherPlatforms`. Android, Desktop, and other non-iOS platforms run the existing `Scaffold` there. Use the block's `entries`, `onBack`, `title`, `canGoBack`, `tabs`, and `onTabSelected`, and pass `entries` to `NavDisplay` instead of `backStack` and `entryProvider`.
+- iOS uses real UIKit tab and navigation bars instead of running that block. If a screen also has its own `TopAppBar`, wrap it in `if (!LocalNativeScreen.current)` to avoid duplicate chrome.
+- For an app without tabs, use `NativeStack(backStack, entryProvider = provider) { ... }` from [Quick Start](#quick-start). If you already use a per-entry ViewModel decorator, move it to `entryDecorators` on `NativeTabs` or `NativeStack`.
+
+#### 3. Connect screen scrolling and padding
+
+Reuse the existing `LazyColumn` state and connect both returned values. This is the body of `HomeScreen(onOpenDetail)`; [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/Screens.kt) contains the complete implementation and imports.
+
+```kotlin
+val state = rememberLazyListState()
+val scroll = rememberNativeScroll(state)
+LazyColumn(
+    state = state,
+    userScrollEnabled = scroll.userScrollEnabled,
+    contentPadding = scroll.contentPadding,
+    modifier = Modifier.fillMaxSize(),
+) {
+    items(50) { id ->
+        ListItem(
+            headlineContent = { Text(text = "Row $id") },
+            modifier = Modifier.clickable { onOpenDetail(id) },
+        )
+    }
+}
+```
+
+For a non-scrolling screen, apply `Modifier.padding(nativeContentPadding())`. On Android and other non-native platforms this native padding is zero, so keep using the `Scaffold` padding above. On iOS it supplies native bar and keyboard insets; do not add system-bar insets or `imePadding()` again. See [Scrolling and content insets](#scroll) for details.
+
+#### 4. Change the iOS entry point
+
+Replace the existing `ComposeUIViewController { App() }` with the following. Android and Desktop entry points continue calling `App()`.
+
+```kotlin
+import zone.ien.navigation.NativeNavigationViewController
+
+fun MainViewController() = NativeNavigationViewController { App() }
+```
+
+The existing SwiftUI `UIViewControllerRepresentable` uses this return value and is embedded with `.ignoresSafeArea()` ([Quick Start bridge](#quick-start)). After migration, check the Material bars and back navigation on Android, plus tab switching, detail push, the back button, edge swipe, and scrolling on iOS.
+
 <a id="지켜야-할-규칙"></a>
 <a id="테마와-앱-전역-compositionlocal"></a>
 <a id="composition"></a>
@@ -266,7 +422,8 @@ Public APIs live in `zone.ien.navigation`. The [common source](library/src/commo
 | `NativeNavigationScope<T>` | Decorated entries and chrome data passed to `otherPlatforms` |
 | `NativeNavigationFrame`, `LocalNativeScreen` | App-wide providers/frame and native-screen detection |
 | `nativeScreen`, `NavEntry.nativeTitle`, `nativeLargeTitle`, `nativeHidesTabBar`, `nativeTitleImage` | Entry metadata and accessors |
-| `rememberNativeScroll`, `NativeScroll`, `nativeContentPadding`, `Modifier.nativeScrollExclusion()` | Native vertical scroll and insets |
+| `rememberNativeScroll`, `NativeScroll`, `NativeScrollContent`, `nativeContentPadding`, `Modifier.nativeScrollExclusion()` | Native vertical scroll, content bounce, and insets |
+| `NativeNavigationTint`, `NativeTabBarTint` | Navigation action and selected-tab tint |
 | `NativeBarItems`, `NativeBarButton`, `NativeMenuAction`, `NativeBarContent` | Bar declarations and data |
 | `NativeSearchBar`, `NativeSearch` | Search declaration and data |
 | `NativeBarState`, `ProvideNativeBarState` | Collect declarations around a plain `NavDisplay` without `NativeStack`/`NativeTabs` |
@@ -314,7 +471,7 @@ NativeTabs(
 ) { MaterialChrome() }
 ```
 
-This fragment extends the quick start with your `Settings` route, provider, and `NativeNavigationScope<NavKey>.MaterialChrome()` renderer; see [App.kt](example/shared/src/commonMain/kotlin/zone/ien/utils/example/App.kt) for the complete implementation.
+This fragment extends the quick start with your `Settings` route, provider, and `NativeNavigationScope<NavKey>.MaterialChrome()` renderer; the current minimal [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt) puts the Material `Scaffold` and `NavDisplay` directly inside the block instead of using a separate renderer.
 
 - iOS creates a `UITabBarController` with one `UINavigationController` per tab. Each tab's decorated entries retain saveable state and ViewModels on other platforms too.
 - `sharedBackStack` may be empty. Its screens always hide the tab bar and push above the selected tab. `onSharedBack` removes one shared entry. If the app changes `selectedTab` while a shared screen is visible, the shared screens move to the new tab without animation.
@@ -324,6 +481,38 @@ This fragment extends the quick start with your `Settings` route, provider, and 
 - Deep links are parsed by your app. Select the tab and replace/extend its Kotlin stack with all destinations; controllers below the top are created when first shown.
 
 <a id="4-android와-desktop"></a>
+Tab icons can also use Compose `Painter` values: `NativeTab(title = "Home", backStack = home, image = homePainter, selectedImage = selectedHomePainter)`. The host renders both images before the tab appears, fits them within 25×25pt, and uses UIKit template tint. `image` takes precedence over `systemImage`; omitting `selectedImage` uses the default tab image. The existing SF Symbols constructor and trailing `onBack` lambda remain supported.
+
+Wrap `NativeTabs` in `NativeTabBarTint(color) { ... }` to set the selected tab icon and label tint. Color changes update the existing tab bar; `Color.Unspecified` restores the system tint. Unselected tab colors and bar appearance remain controlled by UIKit.
+
+<a id="navigation-tint"></a>
+
+### Native navigation and tab tint
+
+`NativeNavigationTint` supplies the iOS back-button, bar-action, and toolbar tint; `NativeTabBarTint` sets the selected tab icon and label tint. This fragment uses your existing `appAccent`, `AppTheme`, `backStack`, and `provider`.
+
+```kotlin
+import zone.ien.navigation.NativeNavigationTint
+import zone.ien.navigation.NativeTabBarTint
+
+NativeNavigationFrame(
+    providers = { content ->
+        NativeNavigationTint(appAccent) {
+            NativeTabBarTint(appAccent) { content() }
+        }
+    },
+    frame = { content -> AppTheme { NativeScrollContent { content() } } },
+) {
+    NativeStack(backStack = backStack, entryProvider = provider) {
+        NavDisplay(entries = entries, onBack = onBack)
+    }
+}
+```
+
+For a tabbed app, replace `NativeStack` with the existing `NativeTabs` declaration. Pass a `Color`; `Color.Unspecified` restores each host's default tint. These providers do not change UI on other platforms; use the app's theme there. Unselected tab colors and system-bar backgrounds/appearance are not overridden.
+
+Do not place these providers only inside the screen `frame`. iOS navigation is declared in a UI-free host composition, so put them in `providers` as above or wrap `NativeStack`/`NativeTabs` directly. Rather than reading screen-theme values such as `MaterialTheme.colorScheme` in the host, pass the app's chosen accent through State or a UI-free color-token provider.
+
 <a id="scope"></a>
 
 ### Rendering on Android, desktop, and web
@@ -342,7 +531,7 @@ The library draws no UI on these platforms. Read these `NativeNavigationScope` v
 
 For an outer stack that covers the tab chrome, use `listOf(NavEntry<NavKey>(TabsKey) { TabsChrome(tabEntries) }) + sharedEntries` as its entries. `TabsKey` and `TabsChrome` belong to your app.
 
-The most recently registered, still-composed screen's bar/search declarations win. An outgoing screen's declarations can remain temporarily when the incoming screen declares none. `systemImage` names are iOS SF Symbols; choose Android icons in your renderer. Menus, toolbars, and search rendering are demonstrated in [App.kt](example/shared/src/commonMain/kotlin/zone/ien/utils/example/App.kt).
+The most recently registered, still-composed screen's bar/search declarations win. An outgoing screen's declarations can remain temporarily when the incoming screen declares none. `systemImage` names are iOS SF Symbols; choose Android icons in your renderer. See [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt) for the minimal integration. Optional menus, toolbars, and search are omitted from the sample.
 
 <a id="1단계-엔트리에-화면-정보를-더합니다"></a>
 <a id="2-엔트리와-화면-메타데이터-공통"></a>
@@ -362,7 +551,7 @@ entry<Detail>(metadata = { key -> nativeScreen(title = "Detail ${key.id}", hides
 | --- | --- | --- |
 | `title` | `null` | `navigationItem.title`; set static titles before push starts |
 | `largeTitle` | `false` | A large title that collapses with scrolling; prefer it only on stack roots |
-| `hidesTabBar` | `false` | `hidesBottomBarWhenPushed`; screens pushed above it also keep the bar hidden |
+| `hidesTabBar` | `false` | Uses `UITabBarController`; screens pushed above it also keep the bar hidden |
 | `titleImage` | `null` | A `@Composable () -> Painter` rendered as a 28pt-high `titleView` with its aspect ratio |
 
 For a logo, use `nativeScreen(title = "Home", titleImage = { painterResource(Res.drawable.logo) })` with your existing Compose resource. Keep `title` for VoiceOver and the next screen's back button. On iOS the painter runs in the host before push, outside the screen's theme; screen theme colors and dark-mode resources are not applied. Other platforms render `titleImage` themselves, for example `Image(image(), contentDescription = title, modifier = Modifier.height(28.dp))` after checking the lambda is non-null. Title images are an experimental feature in this project.
@@ -403,43 +592,166 @@ Column(
 - A non-scrolling screen uses `Modifier.padding(nativeContentPadding())`. Native bar insets are already included; avoid duplicate `WindowInsets` or native-screen `imePadding()`.
 - Programmatic Compose scrolling, such as `animateScrollToItem` or `bringIntoView`, is synchronized back to the native bar.
 
+<a id="content-bounce"></a>
+
+#### Content bounce and fixed elements
+
+`rememberNativeScroll` connects scroll position to the native bars, while `NativeScrollContent` marks the content that moves when pulled past an edge. With no fixed elements, wrap screen content once in `NativeNavigationFrame.frame`, as the current sample does.
+
+When a screen's own Scaffold has fixed buttons or bars, wrap **only its content slot**. `FixedActions` and `ScreenBody` below are existing app composables.
+
+```kotlin
+Scaffold(bottomBar = { FixedActions() }) { padding ->
+    NativeScrollContent(modifier = Modifier.padding(padding)) {
+        ScreenBody()
+    }
+}
+```
+
+With nested `NativeScrollContent` wrappers, the inner content owns the bounce so the outer frame and fixed buttons do not move with it. The wrapper is not inserted automatically and does not replace the scroll state, `userScrollEnabled`, or content-inset connections. Outside native iOS screens it behaves as a regular `Box`.
+
 <a id="바-버튼-메뉴-툴바"></a>
 <a id="검색"></a>
 <a id="bars"></a>
 
 ### Bar items, menus, and search
 
-Declare actions inside screen content so they can read the screen's state and ViewModel:
+Declare `NativeBarItems` inside screen content. The following `EditorBar` takes screen state and callbacks and declares bar buttons, menu items, and a toolbar together. The current minimal [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt) omits bar-item demos; call this function from a screen that needs these actions.
 
 ```kotlin
-NativeBarItems(
-    title = if (count > 0) "Detail $id ($count)" else null,   // Optional: overrides the nativeScreen title
-    trailing = listOf(
-        NativeBarButton("Add one", systemImage = "plus", onClick = viewModel::increment),
-        NativeBarButton(
-            title = "More",
-            systemImage = "ellipsis.circle",
-            menu = listOf(NativeMenuAction("Reset count", destructive = true) { viewModel.reset() }),
+import androidx.compose.runtime.Composable
+import zone.ien.navigation.NativeBarButton
+import zone.ien.navigation.NativeBarItems
+import zone.ien.navigation.NativeMenuAction
+
+@Composable
+fun EditorBar(
+    unreadCount: Int,
+    canSave: Boolean,
+    canDelete: Boolean,
+    onOpenNotifications: () -> Unit,
+    onSave: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    NativeBarItems(
+        trailing = listOf(
+            NativeBarButton(
+                title = "Notifications",
+                systemImage = "bell",
+                badge = unreadCount,
+                onClick = onOpenNotifications,
+            ),
+            NativeBarButton(
+                title = "More",
+                systemImage = "ellipsis.circle",
+                menu = listOf(
+                    NativeMenuAction(
+                        title = "Notifications",
+                        systemImage = "bell",
+                        badge = unreadCount,
+                        onClick = onOpenNotifications,
+                    ),
+                    NativeMenuAction(
+                        title = "Delete",
+                        systemImage = "trash",
+                        destructive = true,
+                        enabled = canDelete,
+                        onClick = onDelete,
+                    ),
+                ),
+            ),
+            NativeBarButton(
+                title = "Save",
+                systemImage = "checkmark",
+                enabled = canSave,
+                isPrimary = true,
+                onClick = onSave,
+            ),
         ),
-    ),
-    toolbar = listOf(
-        NativeBarButton("Decrease", systemImage = "minus.circle", enabled = count > 0, onClick = viewModel::decrement),
-    ),
-)
+        toolbar = listOf(
+            NativeBarButton("Notifications", systemImage = "bell", onClick = onOpenNotifications),
+        ),
+    )
+}
 ```
 
-- `leading` and `trailing` become `UIBarButtonItem`s in left-to-right order, keeping the native back button. Non-empty `menu` opens a `UIMenu` instead of calling the button's `onClick`; actions support `destructive`.
-- `toolbar` appears only while this screen is on top. `enabled` controls button availability; `systemImage` selects an SF Symbol and `title` supplies its accessibility label. Native buttons are recreated only when their appearance changes.
-- Screen declarations are registered after content composes, which is already after push starts. Use `nativeScreen(title)` for static titles that must animate with push; reserve `NativeBarItems(title)` for state-dependent updates.
+`leading` and `trailing` are ordered left to right and keep the native back button. The example puts Save last so it appears at the right edge. The `toolbar` appears only while this screen is on top. Override a dynamic title with `NativeBarItems(title = ...)`; declare static titles needed at the start of a push in `nativeScreen(title = ...)`.
 
-Search keeps the query and filtering in your app:
+<a id="bar-button-options"></a>
+
+#### Bar buttons: NativeBarButton
+
+| Property | Default | Behavior |
+| --- | --- | --- |
+| `title` | Required | Text, or accessibility label when an image is present |
+| `systemImage` | `null` | iOS SF Symbol name |
+| `image` | `null` | Compose `Painter`; takes precedence over `systemImage` |
+| `enabled` | `true` | Button enabled state |
+| `badge` | `0` | `0`: hidden, positive: number, negative: dot |
+| `isPrimary` | `false` | UIKit `UIBarButtonItemStyleDone` emphasis; adds spacing when placed after a regular trailing button |
+| `menu` | Empty list | A non-empty list opens a menu instead of invoking `onClick` |
+| `onClick` | No-op | Invoked by an enabled button without a menu |
+
+On iOS, a badged bar item contains a system `UIButton` and a badge view. `isPrimary` sets the UIKit bar-item style; it does not guarantee the same emphasized background for a button using a badge `customView`. The example keeps the primary action and badged button separate.
+
+Native items are rebuilt only when their shape changes, including titles, images, enabled state, badges, or menus. Callback-only changes keep the existing items and invoke the latest action.
+
+<a id="menu-items"></a>
+
+#### Menu items: NativeMenuAction
+
+Declare each menu item as `NativeMenuAction` and the list as `NativeBarButton(menu = listOf(...))`. On iOS each item becomes a `UIAction` inside a `UIMenu`.
+
+| Property | Default | Behavior |
+| --- | --- | --- |
+| `title` | Required | Menu-item title |
+| `systemImage` | `null` | iOS SF Symbol name |
+| `image` | `null` | Compose `Painter`; takes precedence over `systemImage` |
+| `destructive` | `false` | System styling for destructive actions such as deletion |
+| `enabled` | `true` | When `false`, displays disabled and prevents callback execution |
+| `badge` | `0` | `0`: hidden, positive: number, negative: `•`; shown as an iOS menu **subtitle**, not a badge overlay |
+| `onClick` | Required | Invoked when an enabled item is selected |
+
+Menus are flat lists; there are no submenu, separator, or selection-state APIs. Disabling the parent button also prevents menu actions from executing.
+
+<a id="bar-images"></a>
+
+#### Button and menu images
+
+For `NativeBarButton.image` and `NativeMenuAction.image`, pass `painterResource(...)` for PNG/vector resources or `rememberVectorPainter(...)` for an `ImageVector`. iOS fits the image within 22×22pt, preserves its aspect ratio, and applies native tint to its alpha mask. Existing constructors and trailing click lambdas remain supported.
+
+```kotlin
+NativeBarButton(
+    title = "Custom action",
+    image = painterResource(Res.drawable.my_icon),
+) { performAction() }
+
+NativeMenuAction(
+    title = "Vector action",
+    image = rememberVectorPainter(myImageVector),
+) { performAction() }
+```
+
+Use your app's resource, icon, and action for `Res.drawable.my_icon`, `myImageVector`, and `performAction`.
+
+#### Rendering outside iOS
+
+The library draws no bar UI there. Render buttons from `NativeNavigationScope.leading`, `trailing`, and `toolbar`, plus items in `button.menu`, using the app's existing design system. Reflect `enabled`, `badge`, `image`, `destructive`, and `isPrimary` as appropriate in that renderer. A menu button opens its menu; selecting an item invokes that `NativeMenuAction.onClick`. SF Symbols are iOS-specific, so the app supplies icons for other platforms.
+
+The current sample's Material `TopAppBar` renders only the title and back button. Adding `NativeBarItems` to a screen alone does not add an Android menu. Material 3 apps can connect `DropdownMenu` and `DropdownMenuItem` to the existing bar's action slot; other UI systems use their own menu components.
+
+<a id="search-field"></a>
+
+#### Search
+
+Your app owns the query and filtering:
 
 ```kotlin
 var query by rememberSaveable { mutableStateOf("") }
 NativeSearchBar(query = query, onQueryChange = { query = it }, placeholder = "Search")
 ```
 
-iOS uses a `UISearchController` below the large title, hides it when scrolling down, and supplies clear/cancel controls. Outside iOS, render `scope.search` yourself. To collect declarations around a plain `NavDisplay`, use `ProvideNativeBarState(state) { ... }` with a remembered `NativeBarState`.
+iOS uses a `UISearchController` below the large title, hides it while scrolling down, and supplies clear/cancel controls. Outside iOS, render `scope.search` yourself. To collect declarations around a plain `NavDisplay`, remember a `NativeBarState` and wrap content with `ProvideNativeBarState(state) { ... }`.
 
 <a id="뒤로가기-핸들러"></a>
 <a id="back-handlers"></a>
@@ -525,7 +837,7 @@ These are the repository's configured versions, not a claim that every version c
 | Component | Configuration |
 | --- | --- |
 | Kotlin / Compose Multiplatform | 2.4.21 / 1.12.2 |
-| Navigation 3 runtime / UI | 1.2.0 / 1.2.0 |
+| Navigation 3 runtime / UI | 1.2.1 / 1.2.0 |
 | Lifecycle / Material 3 (example) | 2.11.0 / 1.12.0-alpha03 |
 | AGP / Gradle | 9.3.1 / 9.7.0 |
 | Gradle daemon / compilation | JetBrains Runtime 25 / JDK 17 toolchain |
@@ -551,7 +863,7 @@ Known boundaries:
 
 ## Example apps
 
-The [example](example) shares one `App()` across Android, desktop, and iOS. It has Home, Gallery, and Settings tabs; grids and staggered grids; detail screens with and without the tab bar; shared Profile screens; PNG/vector title images; and a sign-out/sign-in root switch.
+The [example](example) shares one `App()` across Android, desktop, and iOS. It keeps only Home and Settings tabs plus a detail screen. Comments marked `추가:` identify the integration added to an ordinary Material 3 `Scaffold` + Navigation 3 `NavDisplay` app: native tabs, screen metadata, theme and scroll integration, and the iOS entry point. Optional login, search, menus, title images, and process restoration demos are omitted.
 
 ```bash
 example/run-sample.sh

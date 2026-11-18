@@ -100,7 +100,10 @@ internal class StackCoordinator(
             screens[index].shared = index >= sharedFrom
             screens[index].entry = target[index]
         }
-        if (update is StackUpdate.None) return
+        if (update is StackUpdate.None) {
+            screens.last().controller.updateTabBarVisibility(animated = false, onlyIfSelected = true)
+            return
+        }
 
         val kept = screens.take(update.keep)
         val removed = screens.drop(update.keep)
@@ -123,6 +126,7 @@ internal class StackCoordinator(
             is StackUpdate.Replace -> navigationController.setViewControllers(next.map { it.controller }, animated)
             is StackUpdate.None -> Unit
         }
+        next.last().controller.updateTabBarVisibility(animated, onlyIfSelected = true)
         retire(removed)
         updateBackActions()
     }

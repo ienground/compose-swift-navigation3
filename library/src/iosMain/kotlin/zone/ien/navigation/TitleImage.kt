@@ -25,6 +25,7 @@ import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGSizeMake
 import platform.UIKit.UIGraphicsImageRenderer
 import platform.UIKit.UIImage
+import platform.UIKit.UIImageRenderingMode
 
 /**
  * Title images ([nativeScreen] `titleImage`) rendered by the host composition, by content key.
@@ -55,7 +56,7 @@ internal fun rememberTitleImages(entries: List<NavEntry<*>>): Map<Any, UIImage> 
         if (titleImage != null) {
             key(entry.contentKey) {
                 val painter = titleImage()
-                val image = remember(painter, density) { renderTitleImage(painter, density) }
+                val image = remember(painter, density) { renderNativeImage(painter, density, height = TITLE_IMAGE_HEIGHT) }
                 if (image != null) images[entry.contentKey] = image
             }
         }
@@ -66,21 +67,22 @@ internal fun rememberTitleImages(entries: List<NavEntry<*>>): Map<Any, UIImage> 
 /** Height of a title image in the navigation bar, in points. */
 private const val TITLE_IMAGE_HEIGHT = 28f
 
-/**
- * Draws [painter] [TITLE_IMAGE_HEIGHT] points high (its aspect ratio kept, square without an
- * intrinsic size) into a `UIImage` at the screen scale.
- *
- * A painter larger than that (a bitmap) is drawn at up to 4× the target size first: painters
- * shrink with bilinear filtering, which aliases when shrinking a lot. Core Graphics then shrinks
- * it with high-quality interpolation.
- */
+/** Painter를 비율을 유지한 UIKit 이미지로 변환한다. 바 버튼은 [maxWidth]로 크기를 제한한다. */
 @OptIn(ExperimentalForeignApi::class)
-private fun renderTitleImage(painter: Painter, density: Density): UIImage? {
+internal fun renderNativeImage(
+    painter: Painter,
+    density: Density,
+    height: Float,
+    maxWidth: Float = Float.POSITIVE_INFINITY,
+): UIImage? {
     val intrinsic = painter.intrinsicSize
-    val known = intrinsic.isSpecified && intrinsic.width > 0f && intrinsic.height > 0f
-    val height = TITLE_IMAGE_HEIGHT
-    val width = if (known) height * intrinsic.width / intrinsic.height else height
-    val target = Size(width * density.density, height * density.density)
+    val known = intrinsic.isSpecified && intrinsic.width.isFinite() && intrinsic.height.isFinite() &&
+        intrinsic.width > 0f && intrinsic.height > 0f
+    val naturalWidth = if (known) height * intrinsic.width / intrinsic.height else height
+    val fit = min(1f, maxWidth / naturalWidth)
+    val renderedHeight = height * fit
+    val width = naturalWidth * fit
+    val target = Size(width * density.density, renderedHeight * density.density)
     val drawSize = if (known && intrinsic.height > target.height) {
         intrinsic * min(1f, 4 * target.height / intrinsic.height)
     } else {
@@ -95,9 +97,21 @@ private fun renderTitleImage(painter: Painter, density: Density): UIImage? {
         ?: return null
     val drawn = UIImage.imageWithData(png.toNSData()) ?: return null
 
-    val renderer = UIGraphicsImageRenderer(size = CGSizeMake(width.toDouble(), height.toDouble()))
+    val renderer = UIGraphicsImageRenderer(size = CGSizeMake(width.toDouble(), renderedHeight.toDouble()))
     return renderer.imageWithActions { context ->
         CGContextSetInterpolationQuality(context?.CGContext, kCGInterpolationHigh)
-        drawn.drawInRect(CGRectMake(0.0, 0.0, width.toDouble(), height.toDouble()))
+        drawn.drawInRect(CGRectMake(0.0, 0.0, width.toDouble(), renderedHeight.toDouble()))
+    }
+}
+
+/** 탭 아이콘은 호스트에서 준비하여 첫 화면 표시 전 UIKit에 전달합니다. */
+@Composable
+internal fun rememberNativeTabImage(painter: Painter?): UIImage? {
+    val density = LocalDensity.current
+    return remember(painter, density) {
+        painter?.let {
+            renderNativeImage(it, density, height = 25f, maxWidth = 25f)
+                ?.imageWithRenderingMode(UIImageRenderingMode.UIImageRenderingModeAlwaysTemplate)
+        }
     }
 }

@@ -1,5 +1,7 @@
 package zone.ien.navigation
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.ColorPainter
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -91,4 +93,50 @@ class NativeBarItemsTest {
         assertNull(state.search)
         assertEquals(listOf<String?>("Search rows", "Search lines", "Search rows", null), seen)
     }
+    @Test
+    fun painterChangesUpdateButtonsAndMenuImages() {
+        val red = ColorPainter(Color.Red)
+        val blue = ColorPainter(Color.Blue)
+        val first = content(null, NativeBarButton("이미지", image = red))
+        val same = content(null, NativeBarButton("이미지", image = red) {})
+        val changed = content(null, NativeBarButton("이미지", image = blue))
+        assertEquals(first.shape(), same.shape())
+        assertNotEquals(first.shape(), changed.shape())
+        val menuA = content(null, NativeBarButton("메뉴", menu = listOf(NativeMenuAction("실행", image = red) {})))
+        val menuB = content(null, NativeBarButton("메뉴", menu = listOf(NativeMenuAction("실행", image = blue) {})))
+        assertNotEquals(menuA.shape(), menuB.shape())
+    }
+
+    @Test
+    fun existingPositionalConstructorsAndTrailingLambdasStayCompatible() {
+        var calls = 0
+        val button = NativeBarButton("버튼", "plus", true, emptyList()) { calls++ }
+        val action = NativeMenuAction("실행", "checkmark", false) { calls++ }
+        button.onClick()
+        action.onClick()
+        assertEquals(2, calls)
+        assertNull(button.image)
+        assertNull(action.image)
+        val painter = ColorPainter(Color.Red)
+        val imageButton = NativeBarButton("버튼", null, true, emptyList(), painter) { calls++ }
+        val imageAction = NativeMenuAction("실행", null, false, painter) { calls++ }
+        imageButton.onClick()
+        imageAction.onClick()
+        assertEquals(4, calls)
+        assertSame(painter, imageButton.image)
+        assertSame(painter, imageAction.image)
+    }
+
+    @Test
+    fun badgeAndMenuEnabledChangesUpdateTheNativeShape() {
+        val plain = content(null, NativeBarButton("알림"))
+        val badged = content(null, NativeBarButton("알림", badge = 3))
+        assertNotEquals(plain.shape(), badged.shape())
+        val enabled = content(null, NativeBarButton("메뉴", menu = listOf(NativeMenuAction("실행", enabled = true) {})))
+        val disabled = content(null, NativeBarButton("메뉴", menu = listOf(NativeMenuAction("실행", enabled = false) {})))
+        assertNotEquals(enabled.shape(), disabled.shape())
+        val menuBadge = content(null, NativeBarButton("메뉴", menu = listOf(NativeMenuAction("실행", badge = -1) {})))
+        assertNotEquals(enabled.shape(), menuBadge.shape())
+    }
+
 }

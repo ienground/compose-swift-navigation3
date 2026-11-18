@@ -47,5 +47,33 @@ jobs:
           path: ~/.konan
           key: ${{ runner.os }}-konan-${{ hashFiles('gradle/libs.versions.toml') }}
           restore-keys: ${{ runner.os }}-konan-
+      - name: iOS 테스트 시뮬레이터 부팅
+        if: matrix.target == 'iosSimulatorArm64Test'
+        run: |
+          python3 <<'PYTHON'
+          import json
+          import os
+          import re
+          import subprocess
+
+          devices = json.loads(subprocess.check_output(
+              ["xcrun", "simctl", "list", "devices", "available", "--json"]
+          ))["devices"]
+          candidates = [
+              (tuple(map(int, re.findall(r"\d+", runtime.split("iOS-")[-1]))), device)
+              for runtime, entries in devices.items() if "iOS-" in runtime
+              for device in entries if device["name"].startswith("iPhone")
+          ]
+          if not candidates:
+              raise SystemExit("사용 가능한 iPhone 시뮬레이터가 없습니다.")
+          _, device = max(candidates, key=lambda item: item[0])
+          udid = device["udid"]
+          print(f"테스트 기기: {device['name']} ({udid})", flush=True)
+          if device["state"] != "Booted":
+              subprocess.run(["xcrun", "simctl", "boot", udid], check=True)
+          subprocess.run(["xcrun", "simctl", "bootstatus", udid, "-b"], check=True)
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"ORG_GRADLE_PROJECT_iosSimulatorDevice={udid}\n")
+          PYTHON
       - name: Build with Gradle
         run: ./gradlew ${{ matrix.target }}

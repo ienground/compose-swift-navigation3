@@ -18,6 +18,10 @@ import platform.UIKit.didMoveToParentViewController
 import platform.UIKit.hidesBottomBarWhenPushed
 import platform.UIKit.navigationController
 import platform.UIKit.navigationItem
+import platform.UIKit.tabBarController
+import platform.UIKit.transitionCoordinator
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_main_queue
 
 /**
  * A view controller that shows Compose [content] as one screen of a `UINavigationController`.
@@ -45,6 +49,48 @@ internal class ComposeScreenController(
     val bar = NativeBarApplier(this)
     val backHandling = NativeBackHandling(this)
     private val keyboardInset = KeyboardInset(proxy.scrollView)
+
+    /** 엔트리의 탭 바 숨김 요청. 제목 전환과 독립적으로 반영한다. */
+    var hidesTabBar: Boolean = false
+
+    fun updateTabBarVisibility(animated: Boolean, onlyIfSelected: Boolean = false) {
+        val navigation = navigationController ?: return
+        val tabs = tabBarController ?: return
+        if (onlyIfSelected && tabs.selectedViewController != navigation) return
+        val controllers = navigation.viewControllers
+        val index = controllers.indexOf(this)
+        if (index < 0) return
+        val hidden = controllers.take(index + 1).drop(1).any { controller ->
+            val screen = controller as UIViewController
+            (screen as? ComposeScreenController)?.hidesTabBar == true || screen.hidesBottomBarWhenPushed
+        }
+        if (tabs.tabBarHidden == hidden) return
+        val transition = navigation.transitionCoordinator
+        if (hidden && animated && transition != null) {
+            if (tabBarHidePending) return
+            // 전환 중에는 탭 바 여백을 유지하고 화면과 함께 바만 페이드한다.
+            val tabBar = tabs.tabBar
+            val initialAlpha = tabBar.alpha
+            tabBarHidePending = true
+            val queued = transition.animateAlongsideTransitionInView(
+                view = tabBar,
+                animation = { tabBar.alpha = 0.0 },
+                completion = {
+                    tabBarHidePending = false
+                    if (navigation.topViewController == this) {
+                        updateTabBarVisibility(animated = false, onlyIfSelected = true)
+                    }
+                    tabBar.alpha = initialAlpha
+                },
+            )
+            if (queued) return
+            tabBarHidePending = false
+        }
+        tabs.setTabBarHidden(hidden, animated && !hidden)
+    }
+
+    private var tabBarHidePending = false
+    private var appearance = 0L
 
     private val composeController = ComposeUIViewController {
         CompositionLocalProvider(
@@ -89,8 +135,22 @@ internal class ComposeScreenController(
         keyboardInset.stop()
     }
 
+    override fun viewWillDisappear(animated: Boolean) {
+        appearance++
+        super.viewWillDisappear(animated)
+    }
+
     override fun viewWillAppear(animated: Boolean) {
         super.viewWillAppear(animated)
+        val currentAppearance = ++appearance
+        if (animated) {
+            // UIKit이 전환 코디네이터를 설치한 뒤 표시 상태를 동기화한다.
+            dispatch_async(dispatch_get_main_queue()) {
+                if (appearance == currentAppearance) updateTabBarVisibility(animated = true)
+            }
+        } else {
+            updateTabBarVisibility(animated = false)
+        }
         // The appearing screen decides whether the navigation controller's toolbar is shown
         // (also when an interactive pop is cancelled and this screen appears again).
         bar.updateToolbarVisibility(animated, onlyIfTop = false)
@@ -153,8 +213,7 @@ internal class EntryScreen(
         } else {
             UINavigationItemLargeTitleDisplayMode.UINavigationItemLargeTitleDisplayModeNever
         }
-        // Must be set before the push to take effect.
-        controller.hidesBottomBarWhenPushed = shared || entry.nativeHidesTabBar
+        controller.hidesTabBar = shared || entry.nativeHidesTabBar
     }
 }
 

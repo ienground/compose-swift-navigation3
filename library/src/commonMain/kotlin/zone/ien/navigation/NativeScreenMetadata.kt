@@ -24,7 +24,7 @@ import androidx.navigation3.runtime.metadata
  *
  * @param title navigation bar title.
  * @param largeTitle show the large title (collapsing with the scroll) instead of an inline title.
- * @param hidesTabBar hide the tab bar while this screen is pushed (`hidesBottomBarWhenPushed`).
+ * @param hidesTabBar hide the tab bar while this screen or a screen pushed above it is shown.
  * @param titleImage an image shown in the navigation bar in place of the title text, e.g. the
  *   app's logo: `{ painterResource(Res.drawable.logo) }`. Keep [title]: it still names the screen
  *   for VoiceOver and for the back button of the screen pushed above.

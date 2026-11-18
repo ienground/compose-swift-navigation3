@@ -71,6 +71,10 @@ kotlin {
             implementation(libs.androidx.navigationevent.compose)
         }
 
+        iosTest.dependencies {
+            implementation(libs.compose.uiTest)
+        }
+
         commonTest.dependencies {
             implementation(libs.kotlin.test)
         }
@@ -114,4 +118,10 @@ mavenPublishing {
             developerConnection = "scm:git:https://github.com/ienground/compose-swift-navigation3.git"
         }
     }
+}
+
+// Compose UI 테스트는 부팅된 시뮬레이터의 앱 환경에서 실행합니다.
+tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
+    standalone.set(false)
+    providers.gradleProperty("iosSimulatorDevice").orNull?.let { device.set(it) }
 }

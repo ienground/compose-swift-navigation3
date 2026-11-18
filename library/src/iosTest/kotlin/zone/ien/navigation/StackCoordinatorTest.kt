@@ -1,14 +1,127 @@
 package zone.ien.navigation
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.Snapshot
+import platform.Foundation.NSDate
+import platform.Foundation.NSRunLoop
+import platform.Foundation.dateWithTimeIntervalSinceNow
+import platform.Foundation.runUntilDate
+import platform.UIKit.UIColor
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.ColorPainter
+import platform.UIKit.UIImageRenderingMode
+import platform.UIKit.childViewControllers
+import platform.UIKit.tabBarItem
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
 import androidx.navigation3.runtime.NavEntry
+import platform.UIKit.UITabBarController
 import platform.UIKit.UINavigationController
 import platform.UIKit.UIViewController
 import platform.UIKit.hidesBottomBarWhenPushed
+import platform.UIKit.UIScreen
+import platform.UIKit.UIWindow
+import platform.UIKit.transitionCoordinator
+import kotlinx.cinterop.ExperimentalForeignApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /** A stack in a tab: its own entries, then NativeTabs' shared screens (UIKit, no window). */
 class StackCoordinatorTest {
+
+    @Test
+    fun `스택의 네이티브 강조색은 변경과 기본색 복원을 반영한다`() = verifyNavigationTint(false)
+
+    @Test
+    fun `탭 안의 네이티브 강조색도 변경과 기본색 복원을 반영한다`() = verifyNavigationTint(true)
+
+    private fun verifyNavigationTint(tabs: Boolean) {
+        val tint = mutableStateOf(Color.Red)
+        val controller = NativeNavigationViewController {
+            NativeNavigationTint(tint.value) {
+                if (tabs) {
+                    NativeTabs(
+                        tabs = listOf(NativeTab("Home", "house", listOf("home"))),
+                        selectedTab = 0, onTabSelected = {},
+                        entryProvider = { NavEntry(it) {} },
+                    ) {}
+                } else {
+                    NativeStack(backStack = listOf("home"), onBack = {}, entryProvider = { NavEntry(it) {} }) {}
+                }
+            }
+        }
+        controller.loadViewIfNeeded()
+        val child = controller.childViewControllers.single()
+        val navigation = if (tabs) {
+            assertIs<UINavigationController>(assertIs<UITabBarController>(child).viewControllers!!.single())
+        } else assertIs<UINavigationController>(child)
+        val systemTint = UIViewController().view.tintColor
+        for ((color, expected) in listOf(
+            Color.Red to UIColor(red = 1.0, green = 0.0, blue = 0.0, alpha = 1.0),
+            Color.Blue to UIColor(red = 0.0, green = 0.0, blue = 1.0, alpha = 1.0),
+            Color.Unspecified to systemTint,
+        )) {
+            tint.value = color
+            Snapshot.sendApplyNotifications()
+            repeat(10) { NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.02)) }
+            assertEquals(expected, navigation.navigationBar.tintColor)
+            assertEquals(expected, navigation.toolbar.tintColor)
+        }
+    }
+
+    @Test
+    fun customTabImagesReachUIKitBeforeScreenComposition() {
+        val controller = NativeNavigationViewController {
+            NativeTabs(
+                tabs = listOf(NativeTab(
+                    title = "Home", backStack = listOf("home"),
+                    image = ColorPainter(Color.Black), selectedImage = ColorPainter(Color.White),
+                )),
+                selectedTab = 0,
+                onTabSelected = {},
+                entryProvider = { NavEntry(it) {} },
+            ) {}
+        }
+        controller.loadViewIfNeeded()
+        val tabs = assertIs<UITabBarController>(controller.childViewControllers.single())
+        val item = assertIs<UINavigationController>(tabs.viewControllers!!.single()).tabBarItem
+        val image = assertNotNull(item.image)
+        val selected = assertNotNull(item.selectedImage)
+        assertNotSame(image, selected)
+        assertEquals(UIImageRenderingMode.UIImageRenderingModeAlwaysTemplate, image.renderingMode)
+        assertEquals(UIImageRenderingMode.UIImageRenderingModeAlwaysTemplate, selected.renderingMode)
+    }
+
+    @Test
+    fun tabTintTracksChangesAndRestoresSystemColor() {
+        val tint = mutableStateOf(Color.Red)
+        val controller = NativeNavigationViewController {
+            NativeTabBarTint(tint.value) {
+                NativeTabs(
+                    tabs = listOf(NativeTab("Home", "house", listOf("home"))),
+                    selectedTab = 0, onTabSelected = {},
+                    entryProvider = { NavEntry(it) {} },
+                ) {}
+            }
+        }
+        controller.loadViewIfNeeded()
+        val tabs = assertIs<UITabBarController>(controller.childViewControllers.single())
+        val systemBar = UITabBarController().tabBar
+        assertEquals(UIColor(red = 1.0, green = 0.0, blue = 0.0, alpha = 1.0), tabs.tabBar.tintColor)
+        val unselected = tabs.tabBar.unselectedItemTintColor
+        tint.value = Color.Blue
+        Snapshot.sendApplyNotifications()
+        repeat(10) { NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.02)) }
+        assertEquals(UIColor(red = 0.0, green = 0.0, blue = 1.0, alpha = 1.0), tabs.tabBar.tintColor)
+        assertEquals(unselected, tabs.tabBar.unselectedItemTintColor)
+        tint.value = Color.Unspecified
+        Snapshot.sendApplyNotifications()
+        repeat(10) { NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.02)) }
+        assertEquals(systemBar.tintColor, tabs.tabBar.tintColor)
+    }
 
     private fun entry(key: String, hidesTabBar: Boolean = false) =
         NavEntry(key, metadata = nativeScreen(hidesTabBar = hidesTabBar)) {}
@@ -42,7 +155,7 @@ class StackCoordinatorTest {
         stack.show(own = listOf("home", "detail"), shared = listOf("profile", "edit"))
 
         assertEquals(4, navigation.screens.size)
-        assertEquals(listOf(false, false, true, true), navigation.screens.map { it.hidesBottomBarWhenPushed })
+        assertEquals(listOf(false, false, true, true), navigation.screens.map { (it as ComposeScreenController).hidesTabBar })
     }
 
     @Test
@@ -79,7 +192,7 @@ class StackCoordinatorTest {
             shared = listOf(entry("profile", hidesTabBar = false)),
             animated = false,
         )
-        assertEquals(listOf(false, false, true), navigation.screens.map { it.hidesBottomBarWhenPushed })
+        assertEquals(listOf(false, false, true), navigation.screens.map { (it as ComposeScreenController).hidesTabBar })
     }
 
     @Test
@@ -160,7 +273,165 @@ class StackCoordinatorTest {
         navigation.reportShown()
         assertEquals(emptyList(), calls)
         assertEquals(2, navigation.screens.size)
-        assertEquals(true, navigation.screens.last().hidesBottomBarWhenPushed)
+        assertTrue((navigation.screens.last() as ComposeScreenController).hidesTabBar)
+        stack.dispose()
+    }
+
+    private class RecordingTabs : UITabBarController(nibName = null, bundle = null) {
+        val changes = mutableListOf<Pair<Boolean, Boolean>>()
+
+        override fun setTabBarHidden(hidden: Boolean, animated: Boolean) {
+            changes += hidden to animated
+            super.setTabBarHidden(hidden, animated)
+        }
+    }
+
+    @Test
+    fun sharedPushWithoutActiveTransitionHidesTabBarImmediately() {
+        val (stack, navigation) = coordinator()
+        val tabs = RecordingTabs()
+        tabs.setViewControllers(listOf(navigation), animated = false)
+        stack.show(own = listOf("home"), shared = emptyList())
+        tabs.changes.clear()
+        stack.update(
+            entries = listOf(entry("home")),
+            onBack = {},
+            shared = listOf(entry("profile")),
+            onSharedBack = {},
+            animated = true,
+        )
+        assertTrue(tabs.tabBarHidden)
+        assertTrue(tabs.changes.contains(true to false), "실제 전환이 없으면 탭 바를 즉시 숨겨야 합니다.")
+        assertFalse(tabs.changes.any { (hidden, animated) -> hidden && animated })
+        stack.dispose()
+    }
+
+    private class RecordingNavigation : UINavigationController(nibName = null, bundle = null) {
+        var pushedWithHiddenBar: Boolean? = null
+        override fun pushViewController(viewController: UIViewController, animated: Boolean) {
+            pushedWithHiddenBar = viewController.hidesBottomBarWhenPushed
+            super.pushViewController(viewController, animated)
+        }
+    }
+
+    @Test
+    fun sharedPushLeavesLargeTitleTransitionIndependentOfTabBarPolicy() {
+        val navigation = RecordingNavigation()
+        val stack = StackCoordinator(navigation, ContentLeases())
+        val tabs = UITabBarController()
+        tabs.setViewControllers(listOf(navigation), animated = false)
+        stack.show(own = listOf("home"), shared = emptyList())
+        stack.show(own = listOf("home"), shared = listOf("profile"))
+        navigation.topViewController!!.viewWillAppear(false)
+
+        assertEquals(false, navigation.pushedWithHiddenBar, "UIKit이 push 중 큰 제목을 먼저 접는 정책을 설정하지 않습니다.")
+        assertFalse(navigation.topViewController!!.hidesBottomBarWhenPushed)
+        assertTrue(tabs.tabBarHidden, "탭 바는 UITabBarController에서 숨긴다")
+        navigation.popViewControllerAnimated(false)
+        navigation.reportShown()
+        navigation.topViewController!!.viewWillAppear(false)
+        assertFalse(tabs.tabBarHidden, "루트로 돌아오면 탭 바를 복원한다")
+        stack.dispose()
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    @Test
+    fun sharedPushHidesTabBarAfterTheAnimatedTransition() {
+        val (stack, navigation) = coordinator()
+        val tabs = UITabBarController()
+        tabs.setViewControllers(listOf(navigation), animated = false)
+        stack.update(
+            listOf(NavEntry("home", metadata = nativeScreen(title = "Home", largeTitle = true)) {}),
+            onBack = {},
+        )
+        val window = UIWindow(frame = UIScreen.mainScreen.bounds)
+        window.rootViewController = tabs
+        window.makeKeyAndVisible()
+        try {
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.10))
+            stack.update(
+                listOf(NavEntry("home", metadata = nativeScreen(title = "Home", largeTitle = true)) {}),
+                onBack = {},
+                shared = listOf(entry("detail")),
+            )
+            assertNotNull(navigation.transitionCoordinator, "화면에 연결된 UIKit push가 시작되어야 합니다.")
+            assertFalse(tabs.tabBarHidden, "나가는 큰 제목이 움직이는 동안 탭 바 여백을 유지해야 합니다.")
+            repeat(20) {
+                if (!tabs.tabBarHidden) {
+                    NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.05))
+                }
+            }
+            assertTrue(tabs.tabBarHidden, "push 완료 후 상세 화면에서 탭 바가 숨겨져야 합니다.")
+        } finally {
+            window.hidden = true
+            window.rootViewController = null
+            stack.dispose()
+        }
+    }
+
+    @Test
+    fun appearingScreenRestoresTabVisibilityWhenInteractivePopIsCancelled() {
+        val (stack, navigation) = coordinator()
+        val tabs = UITabBarController()
+        tabs.setViewControllers(listOf(navigation), animated = false)
+        stack.show(own = listOf("home"), shared = listOf("profile"))
+        val root = navigation.screens.first()
+        val detail = navigation.screens.last()
+        detail.viewWillAppear(false)
+        assertTrue(tabs.tabBarHidden)
+        root.viewWillAppear(false)
+        assertFalse(tabs.tabBarHidden)
+        detail.viewWillAppear(false)
+        assertTrue(tabs.tabBarHidden, "취소되면 다시 나타나는 상세 화면의 숨김 상태로 돌아간다")
+        stack.dispose()
+    }
+
+    @Test
+    fun screensAboveAHiddenEntryKeepTheTabBarHidden() {
+        val (stack, navigation) = coordinator()
+        val tabs = UITabBarController()
+        tabs.setViewControllers(listOf(navigation), animated = false)
+        stack.update(listOf(entry("home"), entry("hidden", hidesTabBar = true), entry("detail")), {}, animated = false)
+        navigation.topViewController!!.viewWillAppear(false)
+        assertTrue(tabs.tabBarHidden)
+        navigation.popViewControllerAnimated(false)
+        navigation.reportShown()
+        navigation.topViewController!!.viewWillAppear(false)
+        assertTrue(tabs.tabBarHidden)
+        navigation.popViewControllerAnimated(false)
+        navigation.reportShown()
+        navigation.topViewController!!.viewWillAppear(false)
+        assertFalse(tabs.tabBarHidden)
+        stack.dispose()
+    }
+
+    @Test
+    fun changingTheVisibleEntryMetadataUpdatesTabVisibility() {
+        val (stack, navigation) = coordinator()
+        val tabs = UITabBarController()
+        tabs.setViewControllers(listOf(navigation), animated = false)
+        stack.update(listOf(entry("home"), entry("detail")), {}, animated = false)
+        navigation.topViewController!!.viewWillAppear(false)
+        assertFalse(tabs.tabBarHidden)
+        stack.update(listOf(entry("home"), entry("detail", hidesTabBar = true)), {}, animated = false)
+        assertTrue(tabs.tabBarHidden)
+        stack.update(listOf(entry("home"), entry("detail")), {}, animated = false)
+        assertFalse(tabs.tabBarHidden)
+        stack.dispose()
+    }
+
+    @Test
+    fun unselectedStackDoesNotChangeTheVisibleTabBar() {
+        val (stack, navigation) = coordinator()
+        val other = UINavigationController()
+        val tabs = UITabBarController()
+        tabs.setViewControllers(listOf(other, navigation), animated = false)
+        stack.update(listOf(entry("home"), entry("detail")), {}, animated = false)
+        stack.update(listOf(entry("home"), entry("detail", hidesTabBar = true)), {}, animated = false)
+        assertFalse(tabs.tabBarHidden)
+        tabs.selectedIndex = 1u
+        navigation.topViewController!!.viewWillAppear(false)
+        assertTrue(tabs.tabBarHidden)
         stack.dispose()
     }
 
