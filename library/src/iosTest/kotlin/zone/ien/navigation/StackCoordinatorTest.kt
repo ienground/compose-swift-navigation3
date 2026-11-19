@@ -389,6 +389,41 @@ class StackCoordinatorTest {
         }
     }
 
+    @OptIn(ExperimentalForeignApi::class)
+    @Test
+    fun unseededActionsWaitForPushAndNewActionsStartDisabled() {
+        val (stack, navigation) = coordinator()
+        val home = entry("home")
+        stack.update(listOf(home), onBack = {})
+        val window = UIWindow(frame = UIScreen.mainScreen.bounds)
+        window.rootViewController = navigation
+        window.makeKeyAndVisible()
+        try {
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.1))
+            stack.update(listOf(home, entry("detail")), onBack = {})
+            assertNotNull(navigation.transitionCoordinator)
+            val screen = assertIs<ComposeScreenController>(navigation.topViewController)
+            val item = screen.navigationItem
+            val report = NativeBarButton("신고")
+            screen.bar.apply(NativeBarContent(null, emptyList(), listOf(report), emptyList()))
+            assertTrue(item.rightBarButtonItems.isNullOrEmpty())
+
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.7))
+            assertTrue(assertIs<UIBarButtonItem>(item.rightBarButtonItems?.single()).enabled)
+
+            screen.bar.apply(NativeBarContent(null, emptyList(), listOf(report, NativeBarButton("차단")), emptyList()))
+            val block = assertIs<UIBarButtonItem>(item.rightBarButtonItems?.first())
+            assertEquals("차단", block.accessibilityLabel)
+            assertFalse(block.enabled)
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.05))
+            assertTrue(block.enabled)
+        } finally {
+            window.hidden = true
+            window.rootViewController = null
+            stack.dispose()
+        }
+    }
+
     @Test
     fun sharedPushLeavesLargeTitleTransitionIndependentOfTabBarPolicy() {
         val navigation = RecordingNavigation()

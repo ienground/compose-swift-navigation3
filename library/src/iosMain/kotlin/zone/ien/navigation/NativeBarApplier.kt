@@ -161,7 +161,10 @@ internal class NativeBarApplier(private val controller: UIViewController) {
 
         val navigation = controller.navigationController
         val transition = navigation?.transitionCoordinator
-        if (initialTrailing != null && transition != null) {
+        val changesNavigationItems = transition != null && content.shape().let { shape ->
+            shape.leading != appliedShape?.leading.orEmpty() || shape.trailing != appliedShape?.trailing.orEmpty()
+        }
+        if (transition != null && changesNavigationItems) {
             val applier = WeakReference(this)
             waitingForTransition = true
             if (transition.animateAlongsideTransition(animation = null, completion = {
@@ -189,6 +192,8 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         val scale = controller.traitCollection.displayScale.toFloat().takeIf { it > 0f }
             ?: UIScreen.mainScreen.scale.toFloat()
         if (shape == appliedShape && scale == imageScale) return
+        val appliedLeading = appliedShape?.leading.orEmpty()
+        val appliedTrailing = appliedShape?.trailing.orEmpty()
         val previousShape = appliedShape.takeIf { scale == imageScale }
         val previousImages = if (scale == imageScale) images else emptyMap()
         val painters = (shape.leading + shape.trailing + shape.toolbar).flatMap { button ->
@@ -208,9 +213,23 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         val animateBarItems = navigation?.topViewController == controller &&
             !navigation.navigationBarHidden && navigation.navigationBar.topItem == item &&
             controller.viewIfLoaded?.window != null
+        val pendingActivation = mutableListOf<UIBarButtonItem>()
+        fun prepareButton(
+            shape: BarShape.ButtonShape,
+            previous: List<BarShape.ButtonShape>,
+            current: () -> NativeBarButton?,
+        ): UIBarButtonItem = barButton(shape, current).also { button ->
+            if (animateBarItems && shape.enabled && previous.none { it.title == shape.title }) {
+                button.enabled = false
+                button.customView?.userInteractionEnabled = false
+                pendingActivation += button
+            }
+        }
         if (shape.leading != previousShape?.leading) {
             item.setLeftBarButtonItems(
-                shape.leading.mapIndexed { index, button -> barButton(button) { applier.get()?.appliedContent?.leading?.getOrNull(index) } },
+                shape.leading.mapIndexed { index, button ->
+                    prepareButton(button, appliedLeading) { applier.get()?.appliedContent?.leading?.getOrNull(index) }
+                },
                 animated = animateBarItems,
             )
         }
@@ -218,7 +237,7 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         if (shape.trailing != previousShape?.trailing) {
             trailingItems = shape.trailing.mapIndexed { index, button ->
                 if (button == previousShape?.trailing?.getOrNull(index)) trailingItems[index]
-                else barButton(button) { applier.get()?.appliedContent?.trailing?.getOrNull(index) }
+                else prepareButton(button, appliedTrailing) { applier.get()?.appliedContent?.trailing?.getOrNull(index) }
             }
             item.setRightBarButtonItems(
                 shape.trailing.flatMapIndexed { index, button ->
@@ -233,6 +252,15 @@ internal class NativeBarApplier(private val controller: UIViewController) {
                 }.reversed(),
                 animated = animateBarItems,
             )
+        }
+        if (pendingActivation.isNotEmpty()) {
+            dispatch_async(dispatch_get_main_queue()) {
+                val installedItems = item.leftBarButtonItems.orEmpty() + item.rightBarButtonItems.orEmpty()
+                pendingActivation.filter { it in installedItems }.forEach { button ->
+                    button.enabled = true
+                    button.customView?.userInteractionEnabled = true
+                }
+            }
         }
         if (shape.toolbar != previousShape?.toolbar) {
             controller.setToolbarItems(toolbarItems(shape.toolbar), animated = false)
