@@ -64,6 +64,12 @@ public fun NativeNavigationFrame(
  */
 public val LocalNativeScreen: CompositionLocal<Boolean> get() = LocalNativeScreenProvidable
 
+/** 현재 네이티브 화면의 내비게이션 바가 숨겨지도록 선언되었는지 나타냅니다. */
+public val LocalNativeNavigationBarHidden: CompositionLocal<Boolean>
+    get() = LocalNativeNavigationBarHiddenProvidable
+
+internal val LocalNativeNavigationBarHiddenProvidable = staticCompositionLocalOf { false }
+
 internal val LocalNativeScreenProvidable = staticCompositionLocalOf { false }
 
 /** [NativeNavigationFrame]'s providers and frame, applied around each iOS screen. */

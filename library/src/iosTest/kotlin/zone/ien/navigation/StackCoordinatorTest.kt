@@ -11,12 +11,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import platform.UIKit.UIImageRenderingMode
 import platform.UIKit.childViewControllers
+import platform.UIKit.accessibilityLabel
+import platform.UIKit.navigationItem
 import platform.UIKit.tabBarItem
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
 import androidx.navigation3.runtime.NavEntry
 import platform.UIKit.UITabBarController
+import platform.UIKit.UIBarButtonItem
 import platform.UIKit.UINavigationController
 import platform.UIKit.UIViewController
 import platform.UIKit.hidesBottomBarWhenPushed
@@ -308,9 +311,81 @@ class StackCoordinatorTest {
 
     private class RecordingNavigation : UINavigationController(nibName = null, bundle = null) {
         var pushedWithHiddenBar: Boolean? = null
+        val navigationBarChanges = mutableListOf<Pair<Boolean, Boolean>>()
+
+        override fun setNavigationBarHidden(hidden: Boolean, animated: Boolean) {
+            navigationBarChanges += hidden to animated
+            super.setNavigationBarHidden(hidden, animated)
+        }
+
         override fun pushViewController(viewController: UIViewController, animated: Boolean) {
             pushedWithHiddenBar = viewController.hidesBottomBarWhenPushed
             super.pushViewController(viewController, animated)
+        }
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    @Test
+    fun pushAnimatesNavigationBarHidingAndPopRestoresVisibility() {
+        val navigation = RecordingNavigation()
+        val stack = StackCoordinator(navigation, ContentLeases())
+        val home = entry("home")
+        val detail = NavEntry("detail", metadata = nativeScreen(hidesNavigationBar = true)) {}
+        stack.update(listOf(home), onBack = {})
+        val window = UIWindow(frame = UIScreen.mainScreen.bounds)
+        window.rootViewController = navigation
+        window.makeKeyAndVisible()
+        try {
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.1))
+            stack.update(listOf(home, detail), onBack = {})
+            assertNotNull(navigation.transitionCoordinator)
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.6))
+            assertTrue(navigation.navigationBarChanges.contains(true to true), "push 때 애니메이션으로 숨겨야 합니다: ${navigation.navigationBarChanges}")
+            assertTrue(navigation.navigationBarHidden)
+
+            stack.update(listOf(home), onBack = {})
+            assertNotNull(navigation.transitionCoordinator)
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.6))
+            assertFalse(navigation.navigationBarHidden, "pop 완료 후 이전 화면의 상단 바가 복원되어야 합니다.")
+        } finally {
+            window.hidden = true
+            window.rootViewController = null
+            stack.dispose()
+        }
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    @Test
+    fun initialTrailingItemsStayUntilPushCompletes() {
+        val (stack, navigation) = coordinator()
+        val home = entry("home")
+        val subscribe = NativeBarButton("구독", systemImage = "bell", enabled = false)
+        val detail = NavEntry("detail", metadata = nativeScreen(initialTrailing = listOf(subscribe))) {}
+        stack.update(listOf(home), onBack = {})
+        val window = UIWindow(frame = UIScreen.mainScreen.bounds)
+        window.rootViewController = navigation
+        window.makeKeyAndVisible()
+        try {
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.1))
+            stack.update(listOf(home, detail), onBack = {})
+            assertNotNull(navigation.transitionCoordinator)
+            val screen = assertIs<ComposeScreenController>(navigation.topViewController)
+            fun labels() = screen.navigationItem.rightBarButtonItems.orEmpty()
+                .filterIsInstance<UIBarButtonItem>().map { it.accessibilityLabel }
+
+            assertEquals(listOf("구독"), labels())
+            val initialButton = screen.navigationItem.rightBarButtonItems?.single()
+            screen.bar.apply(NativeBarContent(null, emptyList(), listOf(subscribe, NativeBarButton("수정")), emptyList()))
+            screen.bar.apply(NativeBarContent(null, emptyList(), listOf(subscribe, NativeBarButton("신고")), emptyList()))
+            assertEquals(listOf("구독"), labels())
+
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.7))
+            assertEquals(listOf("신고", "구독"), labels())
+            assertEquals(initialButton, screen.navigationItem.rightBarButtonItems?.last())
+        } finally {
+            window.hidden = true
+            window.rootViewController = null
+            stack.dispose()
         }
     }
 

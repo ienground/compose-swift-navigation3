@@ -39,7 +39,7 @@ import kotlin.math.abs
  * See AGENTS.md 6.5.
  */
 @OptIn(ExperimentalForeignApi::class)
-internal class ScrollProxy : NativeScrollHost {
+internal class ScrollProxy(private val screenBottomInset: (Double) -> Double = { it }) : NativeScrollHost {
 
     /** Areas (dp == pt, in the Compose view's coordinates) where the pan must not start. */
     private val exclusions = mutableMapOf<Any, Rect>()
@@ -70,7 +70,7 @@ internal class ScrollProxy : NativeScrollHost {
         override fun calculateLeftPadding(layoutDirection: LayoutDirection): Dp = insetLeft.dp
         override fun calculateTopPadding(): Dp = insetTop.dp
         override fun calculateRightPadding(layoutDirection: LayoutDirection): Dp = insetRight.dp
-        override fun calculateBottomPadding(): Dp = insetBottom.dp
+        override fun calculateBottomPadding(): Dp = screenBottomInset(insetBottom).dp
     }
 
     private val sync = ScrollSync()

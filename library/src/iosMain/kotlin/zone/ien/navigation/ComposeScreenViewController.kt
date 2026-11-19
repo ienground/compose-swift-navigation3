@@ -6,10 +6,19 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalPlatformWindowInsets
+import androidx.compose.ui.platform.PlatformInsets
+import androidx.compose.ui.platform.PlatformWindowInsets
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.ComposeUIViewController
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.useContents
 import platform.UIKit.NSDirectionalRectEdgeAll
 import platform.UIKit.UINavigationItemLargeTitleDisplayMode
 import platform.UIKit.UIViewController
@@ -39,12 +48,13 @@ import platform.darwin.dispatch_get_main_queue
 public fun ComposeScreenViewController(content: @Composable () -> Unit): UIViewController =
     ComposeScreenController(content)
 
+@OptIn(ExperimentalForeignApi::class, InternalComposeUiApi::class)
 internal class ComposeScreenController(
     content: @Composable () -> Unit,
     private val onWillAppear: () -> Unit = {},
 ) : UIViewController(nibName = null, bundle = null) {
 
-    private val proxy = ScrollProxy()
+    private val proxy = ScrollProxy(::screenBottomInset)
     private val barState = NativeBarState()
     val bar = NativeBarApplier(this)
     val backHandling = NativeBackHandling(this)
@@ -52,18 +62,56 @@ internal class ComposeScreenController(
 
     /** 엔트리의 탭 바 숨김 요청. 제목 전환과 독립적으로 반영한다. */
     var hidesTabBar: Boolean = false
+    var hidesNavigationBar by mutableStateOf<Boolean?>(null)
+
+    private var bottomInsetWithoutTabBar by mutableStateOf<Double?>(null)
+
+    private fun tabBarHiddenForScreen(controllers: List<*>): Boolean {
+        val index = controllers.indexOf(this)
+        return index > 0 && controllers.subList(1, index + 1).any { controller ->
+            val screen = controller as UIViewController
+            (screen as? ComposeScreenController)?.hidesTabBar == true || screen.hidesBottomBarWhenPushed
+        }
+    }
+
+    private fun updateBottomInset() {
+        val controllers = navigationController?.viewControllers
+        val tabs = tabBarController
+        bottomInsetWithoutTabBar =
+            if (tabs != null && controllers != null && tabBarHiddenForScreen(controllers)) {
+                val window = viewIfLoaded?.window ?: tabs.viewIfLoaded?.window
+                window?.safeAreaInsets?.useContents { bottom }
+            } else {
+                null
+            }
+    }
+
+    private fun screenBottomInset(adjustedBottom: Double): Double {
+        val homeIndicator = bottomInsetWithoutTabBar ?: return adjustedBottom
+        val navigation = navigationController
+        val toolbar = navigation?.toolbar?.takeIf { !navigation.toolbarHidden && it.window != null }
+        val toolbarInset = if (toolbar == null) 0.0 else {
+            val viewportBottom = view.convertRect(view.bounds, toView = null).useContents { origin.y + size.height }
+            val toolbarTop = toolbar.convertRect(toolbar.bounds, toView = null).useContents { origin.y }
+            viewportBottom - toolbarTop
+        }
+        return maxOf(homeIndicator, keyboardInset.overlap, toolbarInset)
+    }
+
+    fun updateNavigationBarVisibility(animated: Boolean) {
+        val hidden = hidesNavigationBar ?: return
+        val navigation = navigationController ?: return
+        if (navigation.navigationBarHidden != hidden) navigation.setNavigationBarHidden(hidden, animated)
+    }
 
     fun updateTabBarVisibility(animated: Boolean, onlyIfSelected: Boolean = false) {
         val navigation = navigationController ?: return
         val tabs = tabBarController ?: return
         if (onlyIfSelected && tabs.selectedViewController != navigation) return
         val controllers = navigation.viewControllers
-        val index = controllers.indexOf(this)
-        if (index < 0) return
-        val hidden = controllers.take(index + 1).drop(1).any { controller ->
-            val screen = controller as UIViewController
-            (screen as? ComposeScreenController)?.hidesTabBar == true || screen.hidesBottomBarWhenPushed
-        }
+        if (this !in controllers) return
+        updateBottomInset()
+        val hidden = tabBarHiddenForScreen(controllers)
         if (tabs.tabBarHidden == hidden) return
         val transition = navigation.transitionCoordinator
         if (hidden && animated && transition != null) {
@@ -93,8 +141,17 @@ internal class ComposeScreenController(
     private var appearance = 0L
 
     private val composeController = ComposeUIViewController {
+        val platformInsets = LocalPlatformWindowInsets.current
+        val density = LocalDensity.current
+        val bottom = bottomInsetWithoutTabBar
+        val screenInsets = remember(platformInsets, density, bottom) {
+            if (bottom == null) platformInsets
+            else ScreenWindowInsets(platformInsets, with(density) { bottom.dp.roundToPx() })
+        }
         CompositionLocalProvider(
+            LocalPlatformWindowInsets provides screenInsets,
             LocalNativeScreenProvidable provides true,
+            LocalNativeNavigationBarHiddenProvidable provides (hidesNavigationBar == true),
             LocalNativeScrollHost provides proxy,
             LocalNativeBarState provides barState,
             // Back handlers of the content register with this screen's dispatcher, which routes
@@ -110,6 +167,7 @@ internal class ComposeScreenController(
     init {
         barState.listener = bar::apply
         barState.searchListener = bar::applySearch
+        barState.subtitleListener = bar::applySubtitle
     }
 
     override fun loadView() {
@@ -127,6 +185,7 @@ internal class ComposeScreenController(
 
     override fun viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        updateBottomInset()
         proxy.updateInsets()
     }
 
@@ -143,6 +202,8 @@ internal class ComposeScreenController(
     override fun viewWillAppear(animated: Boolean) {
         super.viewWillAppear(animated)
         val currentAppearance = ++appearance
+        updateBottomInset()
+        updateNavigationBarVisibility(animated)
         if (animated) {
             // UIKit이 전환 코디네이터를 설치한 뒤 표시 상태를 동기화한다.
             dispatch_async(dispatch_get_main_queue()) {
@@ -158,6 +219,20 @@ internal class ComposeScreenController(
         backHandling.updateBackAction()
         keyboardInset.start()
         onWillAppear()
+    }
+}
+
+// 탭 바가 페이드되는 동안 나가는 화면은 탭 바 여백을 유지한다.
+@OptIn(InternalComposeUiApi::class)
+private class ScreenWindowInsets(
+    delegate: PlatformWindowInsets,
+    bottom: Int,
+) : PlatformWindowInsets by delegate {
+    override val navigationBars = delegate.navigationBars.withBottom(bottom)
+    override val systemBars = delegate.systemBars.withBottom(bottom)
+
+    private fun PlatformInsets.withBottom(value: Int): PlatformInsets = object : PlatformInsets by this {
+        override val bottom: Int = value
     }
 }
 
@@ -207,6 +282,7 @@ internal class EntryScreen(
     private fun applyChrome() {
         val entry = state.entry
         controller.bar.baseTitle = entry.nativeTitle
+        controller.bar.initialTrailing = entry.nativeInitialTrailing
         controller.bar.titleImage = titleImages[state.contentKey]
         controller.navigationItem.largeTitleDisplayMode = if (entry.nativeLargeTitle) {
             UINavigationItemLargeTitleDisplayMode.UINavigationItemLargeTitleDisplayModeAlways

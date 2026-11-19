@@ -45,6 +45,38 @@ public fun nativeScreen(
     if (titleImage != null) put(NativeTitleImage, titleImage)
 }
 
+/**
+ * UIKit 내비게이션 바를 화면 전환에 맞춰 표시하거나 숨깁니다.
+ *
+ * @param hidesNavigationBar 이 화면에서 내비게이션 바를 숨길지 여부. 값을 선언한 스택은
+ * 표시 여부를 관리하며, 선언이 없는 화면에서는 내비게이션 바를 표시합니다.
+ */
+public fun nativeScreen(
+    title: String? = null,
+    largeTitle: Boolean = false,
+    hidesTabBar: Boolean = false,
+    titleImage: (@Composable () -> Painter)? = null,
+    hidesNavigationBar: Boolean,
+): Map<String, Any> = nativeScreen(title, largeTitle, hidesTabBar, titleImage) + metadata {
+    put(NativeHidesNavigationBar, hidesNavigationBar)
+}
+
+/**
+ * 화면이 열리기 전에 오른쪽 바 버튼을 준비합니다.
+ * 화면에서 선언한 [NativeBarItems]는 UIKit 화면 전환이 끝나면 초기 버튼을 대체합니다.
+ */
+public fun nativeScreen(
+    initialTrailing: List<NativeBarButton>,
+    title: String? = null,
+): Map<String, Any> = nativeScreen(title = title) + metadata {
+    put(NativeInitialTrailing, initialTrailing)
+}
+
+internal val NavEntry<*>.nativeInitialTrailing: List<NativeBarButton>?
+    get() = metadata[NativeInitialTrailing]
+
+internal val NavEntry<*>.nativeHidesNavigationBar: Boolean? get() = metadata[NativeHidesNavigationBar]
+
 public val NavEntry<*>.nativeTitle: String? get() = metadata[NativeTitle]
 public val NavEntry<*>.nativeLargeTitle: Boolean get() = metadata[NativeLargeTitle] ?: false
 public val NavEntry<*>.nativeHidesTabBar: Boolean get() = metadata[NativeHidesTabBar] ?: false
@@ -65,4 +97,12 @@ private object NativeHidesTabBar : NavMetadataKey<Boolean> {
 
 private object NativeTitleImage : NavMetadataKey<@Composable () -> Painter> {
     override fun toString(): String = "zone.ien.navigation.titleImage"
+}
+
+private object NativeHidesNavigationBar : NavMetadataKey<Boolean> {
+    override fun toString(): String = "zone.ien.navigation.hidesNavigationBar"
+}
+
+private object NativeInitialTrailing : NavMetadataKey<List<NativeBarButton>> {
+    override fun toString(): String = "zone.ien.navigation.initialTrailing"
 }

@@ -1,5 +1,8 @@
 package zone.ien.navigation
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
 import platform.CoreGraphics.CGRectGetMaxY
@@ -30,6 +33,8 @@ import kotlin.native.ref.WeakReference
 internal class KeyboardInset(scrollView: UIScrollView) {
     private val scrollView = WeakReference(scrollView)
     private val observers = mutableListOf<Any>()
+    var overlap by mutableDoubleStateOf(0.0)
+        private set
 
     fun start() {
         if (observers.isNotEmpty()) return
@@ -63,6 +68,7 @@ internal class KeyboardInset(scrollView: UIScrollView) {
     }
 
     private fun setOverlap(overlap: Double) {
+        this.overlap = overlap
         val view = scrollView.get() ?: return
         // The safe area (home indicator, tab bar) is already part of the adjusted inset.
         val safeBottom = view.safeAreaInsets.useContents { bottom }

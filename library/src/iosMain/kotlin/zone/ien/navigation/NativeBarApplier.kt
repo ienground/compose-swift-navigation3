@@ -6,6 +6,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
 import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGSizeMake
+import platform.Foundation.NSProcessInfo
 import platform.UIKit.UIGraphicsImageRenderer
 import platform.UIKit.UIButton
 import platform.UIKit.UIButtonTypeSystem
@@ -47,6 +48,9 @@ import platform.UIKit.isAccessibilityElement
 import platform.UIKit.navigationController
 import platform.UIKit.navigationItem
 import platform.UIKit.setToolbarItems
+import platform.UIKit.transitionCoordinator
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_main_queue
 import kotlin.experimental.ExperimentalNativeApi
 import kotlin.native.ref.WeakReference
 
@@ -97,6 +101,19 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         if (bar.text.orEmpty() != search.query) bar.text = search.query
     }
 
+    private var latestSubtitle: String? = null
+
+    fun applySubtitle(text: String?) {
+        if (latestSubtitle == text) return
+        latestSubtitle = text
+        val item = controller.navigationItem
+        if (NSProcessInfo.processInfo.operatingSystemVersion.useContents { majorVersion >= 26 }) {
+            item.subtitle = text
+        } else {
+            item.prompt = text
+        }
+    }
+
     private var latest: NativeBarContent? = null
     private var appliedShape: BarShape? = null
     private var images: Map<Painter, UIImage?> = emptyMap()
@@ -126,14 +143,53 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         }
     private var titleImageView: UIImageView? = null
 
+    var initialTrailing: List<NativeBarButton>? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            if (latest == null && !waitingForTransition) applyItems(null)
+        }
+
+    private var waitingForTransition = false
+    private var appliedContent: NativeBarContent? = null
+    private var trailingItems = emptyList<UIBarButtonItem>()
+
     fun apply(content: NativeBarContent?) {
         latest = content
         applyTitle()
+        if (waitingForTransition) return
 
+        val navigation = controller.navigationController
+        val transition = navigation?.transitionCoordinator
+        if (initialTrailing != null && transition != null) {
+            val applier = WeakReference(this)
+            waitingForTransition = true
+            if (transition.animateAlongsideTransition(animation = null, completion = {
+                    dispatch_async(dispatch_get_main_queue()) {
+                        applier.get()?.applyAfterTransition()
+                    }
+                })
+            ) return
+            waitingForTransition = false
+        }
+        applyItems(content)
+    }
+
+    private fun applyAfterTransition() {
+        waitingForTransition = false
+        apply(latest)
+    }
+
+    private fun applyItems(declared: NativeBarContent?) {
+        val content = declared ?: initialTrailing?.let {
+            NativeBarContent(null, emptyList(), it, emptyList())
+        }
+        appliedContent = content
         val shape = content.shape()
         val scale = controller.traitCollection.displayScale.toFloat().takeIf { it > 0f }
             ?: UIScreen.mainScreen.scale.toFloat()
         if (shape == appliedShape && scale == imageScale) return
+        val previousShape = appliedShape.takeIf { scale == imageScale }
         val previousImages = if (scale == imageScale) images else emptyMap()
         val painters = (shape.leading + shape.trailing + shape.toolbar).flatMap { button ->
             listOfNotNull(button.image) + button.menu.mapNotNull { it.image }
@@ -148,25 +204,39 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         val item = controller.navigationItem
         val applier = WeakReference(this)
         item.leftItemsSupplementBackButton = true
-        item.setLeftBarButtonItems(
-            shape.leading.mapIndexed { index, button -> barButton(button) { applier.get()?.latest?.leading?.getOrNull(index) } },
-            animated = false,
-        )
+        val navigation = controller.navigationController
+        val animateBarItems = navigation?.topViewController == controller &&
+            !navigation.navigationBarHidden && navigation.navigationBar.topItem == item &&
+            controller.viewIfLoaded?.window != null
+        if (shape.leading != previousShape?.leading) {
+            item.setLeftBarButtonItems(
+                shape.leading.mapIndexed { index, button -> barButton(button) { applier.get()?.appliedContent?.leading?.getOrNull(index) } },
+                animated = animateBarItems,
+            )
+        }
         // rightBarButtonItems are ordered from the right edge; the API takes them left to right.
-        item.setRightBarButtonItems(
-            shape.trailing.flatMapIndexed { index, button ->
-                val barItem = barButton(button) { applier.get()?.latest?.trailing?.getOrNull(index) }
-                if (button.isPrimary && index > 0 && !shape.trailing[index - 1].isPrimary) {
-                    val separator = UIBarButtonItem(barButtonSystemItem = UIBarButtonSystemItemFixedSpace, target = null, action = null)
-                    separator.width = 8.0
-                    listOf(separator, barItem)
-                } else {
-                    listOf(barItem)
-                }
-            }.reversed(),
-            animated = false,
-        )
-        controller.setToolbarItems(toolbarItems(shape.toolbar), animated = false)
+        if (shape.trailing != previousShape?.trailing) {
+            trailingItems = shape.trailing.mapIndexed { index, button ->
+                if (button == previousShape?.trailing?.getOrNull(index)) trailingItems[index]
+                else barButton(button) { applier.get()?.appliedContent?.trailing?.getOrNull(index) }
+            }
+            item.setRightBarButtonItems(
+                shape.trailing.flatMapIndexed { index, button ->
+                    val barItem = trailingItems[index]
+                    if (button.isPrimary && index > 0 && !shape.trailing[index - 1].isPrimary) {
+                        val separator = UIBarButtonItem(barButtonSystemItem = UIBarButtonSystemItemFixedSpace, target = null, action = null)
+                        separator.width = 8.0
+                        listOf(separator, barItem)
+                    } else {
+                        listOf(barItem)
+                    }
+                }.reversed(),
+                animated = animateBarItems,
+            )
+        }
+        if (shape.toolbar != previousShape?.toolbar) {
+            controller.setToolbarItems(toolbarItems(shape.toolbar), animated = false)
+        }
         updateToolbarVisibility(animated = true, onlyIfTop = true)
     }
 
@@ -228,7 +298,7 @@ internal class NativeBarApplier(private val controller: UIViewController) {
 
     private fun toolbarItems(buttons: List<BarShape.ButtonShape>): List<UIBarButtonItem> {
         val applier = WeakReference(this)
-        val items = buttons.mapIndexed { index, button -> barButton(button) { applier.get()?.latest?.toolbar?.getOrNull(index) } }
+        val items = buttons.mapIndexed { index, button -> barButton(button) { applier.get()?.appliedContent?.toolbar?.getOrNull(index) } }
         return when (items.size) {
             0 -> emptyList()
             1 -> listOf(UIBarButtonItem.flexibleSpaceItem(), items.single(), UIBarButtonItem.flexibleSpaceItem())

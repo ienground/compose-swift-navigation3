@@ -146,6 +146,23 @@ public fun NativeBarItems(
     }
 }
 
+/**
+ * 현재 화면의 네이티브 내비게이션 바 부제목을 선언합니다.
+ * 제목과 버튼은 [NativeBarItems]로 별도 선언할 수 있습니다.
+ * iOS 26 이상에서는 부제목을, 이전 버전에서는 프롬프트를 사용합니다.
+ *
+ * @param text 표시할 부제목. null이면 부제목을 지웁니다.
+ */
+@Composable
+public fun NativeBarSubtitle(text: String?) {
+    val state = LocalNativeBarState.current ?: return
+    val owner = remember { Any() }
+    SideEffect { state.registerSubtitle(owner, text) }
+    DisposableEffect(state, owner) {
+        onDispose { state.unregisterSubtitle(owner) }
+    }
+}
+
 /** A search field declared with [NativeSearchBar]. */
 @Immutable
 public class NativeSearch internal constructor(
@@ -194,6 +211,21 @@ public class NativeBarState {
     public val leading: List<NativeBarButton> get() = current?.leading.orEmpty()
     public val trailing: List<NativeBarButton> get() = current?.trailing.orEmpty()
     public val toolbar: List<NativeBarButton> get() = current?.toolbar.orEmpty()
+
+    private val subtitles = mutableStateListOf<Pair<Any, String?>>()
+    internal var subtitleListener: ((String?) -> Unit)? = null
+    public val subtitle: String? get() = subtitles.lastOrNull()?.second
+
+    internal fun registerSubtitle(owner: Any, text: String?) {
+        val index = subtitles.indexOfFirst { it.first === owner }
+        if (index >= 0) subtitles[index] = owner to text else subtitles.add(owner to text)
+        subtitleListener?.invoke(subtitle)
+    }
+
+    internal fun unregisterSubtitle(owner: Any) {
+        subtitles.removeAll { it.first === owner }
+        subtitleListener?.invoke(subtitle)
+    }
 
     private val searches = mutableStateListOf<Pair<Any, NativeSearch>>()
 

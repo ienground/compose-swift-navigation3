@@ -187,7 +187,7 @@ private class RootNavigationHost(private val root: NativeNavigationRootControlle
             key(index) {
                 TabState(
                     tab.title, tab.systemImage, entriesPerTab[index], tab.onBack,
-                    rememberNativeTabImage(tab.image), rememberNativeTabImage(tab.selectedImage),
+                    rememberNativeTabImage(tab.image), rememberNativeTabImage(tab.selectedImage), tab.badgeCount,
                 )
             }
         }
@@ -230,6 +230,7 @@ internal class TabState(
     val onBack: () -> Unit,
     val image: UIImage? = null,
     val selectedImage: UIImage? = null,
+    val badgeCount: Int? = null,
 )
 
 private data class TabAppearance(
@@ -509,7 +510,13 @@ private class TabsLayout(
         val showing = tabBarController.selectedIndex.toInt()
         val selected = if (selectedTab in tabs.indices) selectedTab else showing
         tabs.forEachIndexed { index, tab ->
-            stacks[index].update(
+            val stack = stacks[index]
+            tab.badgeCount?.let { count ->
+                val item = stack.navigationController.tabBarItem
+                val badge = count.takeIf { it > 0 }?.toString()
+                if (item.badgeValue != badge) item.badgeValue = badge
+            }
+            stack.update(
                 entries = tab.entries,
                 onBack = tab.onBack,
                 shared = if (index == selected) shared.entries else emptyList(),

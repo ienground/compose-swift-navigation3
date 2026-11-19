@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
+import platform.Foundation.NSProcessInfo
 import platform.UIKit.UIBarButtonItem
 import platform.UIKit.UIAction
 import platform.UIKit.UIImageRenderingMode
@@ -28,6 +29,39 @@ import platform.UIKit.UIViewController
 
 @OptIn(ExperimentalNativeApi::class, NativeRuntimeApi::class, BetaInteropApi::class, ExperimentalForeignApi::class)
 class NativeBarApplierTest {
+    @Test
+    fun subtitleChangesAndClearsIndependentlyOfBarItems() {
+        val controller = UIViewController()
+        val item = controller.navigationItem
+        val applier = NativeBarApplier(controller)
+        val state = NativeBarState()
+        state.listener = applier::apply
+        state.subtitleListener = applier::applySubtitle
+        val hasSubtitle = NSProcessInfo.processInfo.operatingSystemVersion.useContents { majorVersion >= 26 }
+        fun displayedSubtitle() = if (hasSubtitle) item.subtitle else item.prompt
+
+        val barOwner = Any()
+        val subtitleOwner = Any()
+        val nextSubtitleOwner = Any()
+        state.register(barOwner, NativeBarContent("채팅", emptyList(), listOf(NativeBarButton("신고")), emptyList()))
+        val action = item.rightBarButtonItems?.singleOrNull()
+        assertNotNull(action)
+
+        state.registerSubtitle(subtitleOwner, "운영자")
+        assertEquals("운영자", displayedSubtitle())
+        state.registerSubtitle(nextSubtitleOwner, "매칭방")
+        assertEquals("매칭방", displayedSubtitle())
+        state.unregisterSubtitle(nextSubtitleOwner)
+        assertEquals("운영자", displayedSubtitle())
+        state.registerSubtitle(subtitleOwner, null)
+        assertNull(displayedSubtitle())
+        state.registerSubtitle(subtitleOwner, "운영자")
+        state.unregisterSubtitle(subtitleOwner)
+        assertNull(displayedSubtitle())
+        assertEquals("채팅", item.title)
+        assertEquals(action, item.rightBarButtonItems?.singleOrNull())
+    }
+
     private fun controller(content: NativeBarContent): WeakReference<UIViewController> = autoreleasepool {
         val controller = UIViewController()
         NativeBarApplier(controller).apply(content)
