@@ -13,10 +13,15 @@ import platform.UIKit.UIButtonTypeSystem
 import platform.UIKit.UIControlStateNormal
 import platform.UIKit.UIControlEventTouchUpInside
 import platform.UIKit.systemRedColor
+import platform.UIKit.labelColor
 import platform.UIKit.UIColor
 import platform.UIKit.UIFont
 import platform.UIKit.UIFontWeightSemibold
 import platform.UIKit.UIView
+import platform.UIKit.UIAccessibilityIsReduceMotionEnabled
+import platform.UIKit.UIViewAnimationOptionAllowUserInteraction
+import platform.UIKit.UIViewAnimationOptionBeginFromCurrentState
+import platform.UIKit.UIViewAnimationOptionTransitionCrossDissolve
 import platform.UIKit.UIViewAutoresizingFlexibleWidth
 import platform.UIKit.UIViewAutoresizingFlexibleHeight
 import platform.UIKit.UIViewAutoresizingFlexibleLeftMargin
@@ -33,6 +38,7 @@ import platform.UIKit.UIBarButtonItemStyle.UIBarButtonItemStyleDone
 import platform.UIKit.UIBarButtonItemStyle.UIBarButtonItemStylePlain
 import platform.UIKit.UIBarButtonSystemItem.UIBarButtonSystemItemFixedSpace
 import platform.UIKit.UIAccessibilityTraitHeader
+import platform.UIKit.UIAccessibilityTraitStaticText
 import platform.UIKit.UIImage
 import platform.UIKit.UIImageView
 import platform.UIKit.UIMenu
@@ -114,6 +120,45 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         }
     }
 
+    private class LeadingTextItem {
+        private val view = UILabel(frame = CGRectMake(0.0, 0.0, 0.0, 24.0)).apply {
+            font = UIFont.monospacedDigitSystemFontOfSize(15.0, weight = UIFontWeightSemibold)
+            textColor = UIColor.labelColor
+            textAlignment = NSTextAlignmentCenter
+            adjustsFontSizeToFitWidth = true
+            minimumScaleFactor = 0.7
+            isAccessibilityElement = true
+            accessibilityTraits = UIAccessibilityTraitStaticText
+        }
+        private val widthConstraint = view.widthAnchor.constraintEqualToConstant(0.0).apply { active = true }
+        val item = UIBarButtonItem(customView = view).apply {
+            if (NSProcessInfo.processInfo.operatingSystemVersion.useContents { majorVersion >= 26 }) {
+                hidesSharedBackground = true
+            }
+        }
+
+        fun update(text: String, width: Float, accessibilityLabel: String?) {
+            if (view.text != text) view.text = text
+            val label = accessibilityLabel ?: text
+            if (view.accessibilityLabel != label) view.accessibilityLabel = label
+            if (widthConstraint.constant != width.toDouble()) widthConstraint.constant = width.toDouble()
+        }
+    }
+    private val leadingLabelItem by lazy { LeadingTextItem() }
+    private val leadingTextItems = mutableMapOf<String, LeadingTextItem>()
+    private var leadingLabel: NativeLeadingLabel? = null
+    private var appliedHasLeadingLabel = false
+
+    fun applyLeadingLabel(label: NativeLeadingLabel?) {
+        if (leadingLabel == label) return
+        val visibilityChanged = (leadingLabel == null) != (label == null)
+        leadingLabel = label
+        if (label != null) {
+            leadingLabelItem.update(label.text, label.width, label.accessibilityLabel)
+        }
+        if (visibilityChanged) apply(latest)
+    }
+
     private var latest: NativeBarContent? = null
     private var appliedShape: BarShape? = null
     private var images: Map<Painter, UIImage?> = emptyMap()
@@ -147,11 +192,12 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         set(value) {
             if (field == value) return
             field = value
-            if (latest == null && !waitingForTransition) applyItems(null)
+            if (latest == null) apply(null)
         }
 
     private var waitingForTransition = false
     private var appliedContent: NativeBarContent? = null
+    private var leadingItems = emptyList<UIBarButtonItem>()
     private var trailingItems = emptyList<UIBarButtonItem>()
 
     fun apply(content: NativeBarContent?) {
@@ -161,8 +207,9 @@ internal class NativeBarApplier(private val controller: UIViewController) {
 
         val navigation = controller.navigationController
         val transition = navigation?.transitionCoordinator
-        val changesNavigationItems = transition != null && content.shape().let { shape ->
-            shape.leading != appliedShape?.leading.orEmpty() || shape.trailing != appliedShape?.trailing.orEmpty()
+        val changesNavigationItems = transition != null && contentWithInitialItems(content).shape().let { shape ->
+            shape.leading != appliedShape?.leading.orEmpty() || shape.trailing != appliedShape?.trailing.orEmpty() ||
+                (leadingLabel != null) != appliedHasLeadingLabel
         }
         if (transition != null && changesNavigationItems) {
             val applier = WeakReference(this)
@@ -183,20 +230,26 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         apply(latest)
     }
 
+    private fun contentWithInitialItems(content: NativeBarContent?): NativeBarContent? =
+        content ?: initialTrailing?.let { NativeBarContent(null, emptyList(), it, emptyList()) }
+
     private fun applyItems(declared: NativeBarContent?) {
-        val content = declared ?: initialTrailing?.let {
-            NativeBarContent(null, emptyList(), it, emptyList())
-        }
+        val content = contentWithInitialItems(declared)
         appliedContent = content
         val shape = content.shape()
         val scale = controller.traitCollection.displayScale.toFloat().takeIf { it > 0f }
             ?: UIScreen.mainScreen.scale.toFloat()
-        if (shape == appliedShape && scale == imageScale) return
-        val appliedLeading = appliedShape?.leading.orEmpty()
+        val hasLeadingLabel = leadingLabel != null
+        val leadingTexts = content?.leadingComponents.orEmpty().filterIsInstance<NativeBarText>()
+        leadingTexts.forEach { text ->
+            leadingTextItems[text.key]?.update(text.text, text.width, text.accessibilityLabel)
+        }
+        if (shape == appliedShape && scale == imageScale && hasLeadingLabel == appliedHasLeadingLabel) return
+        val appliedLeading = appliedShape?.leading.orEmpty().filterIsInstance<BarShape.ButtonShape>()
         val appliedTrailing = appliedShape?.trailing.orEmpty()
         val previousShape = appliedShape.takeIf { scale == imageScale }
         val previousImages = if (scale == imageScale) images else emptyMap()
-        val painters = (shape.leading + shape.trailing + shape.toolbar).flatMap { button ->
+        val painters = (shape.leading.filterIsInstance<BarShape.ButtonShape>() + shape.trailing + shape.toolbar).flatMap { button ->
             listOfNotNull(button.image) + button.menu.mapNotNull { it.image }
         }.toSet()
         images = painters.associateWith { painter ->
@@ -213,6 +266,12 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         val animateBarItems = navigation?.topViewController == controller &&
             !navigation.navigationBarHidden && navigation.navigationBar.topItem == item &&
             controller.viewIfLoaded?.window != null
+        val fadeActionGroups = animateBarItems && !UIAccessibilityIsReduceMotionEnabled() &&
+            (shape.leading.size != previousShape?.leading.orEmpty().size ||
+                shape.trailing.size != previousShape?.trailing.orEmpty().size ||
+                hasLeadingLabel != appliedHasLeadingLabel)
+        val leadingChanged = shape.leading != previousShape?.leading || hasLeadingLabel != appliedHasLeadingLabel
+        val trailingChanged = shape.trailing != previousShape?.trailing
         val pendingActivation = mutableListOf<UIBarButtonItem>()
         fun prepareButton(
             shape: BarShape.ButtonShape,
@@ -225,41 +284,74 @@ internal class NativeBarApplier(private val controller: UIViewController) {
                 pendingActivation += button
             }
         }
-        if (shape.leading != previousShape?.leading) {
-            item.setLeftBarButtonItems(
-                shape.leading.mapIndexed { index, button ->
-                    prepareButton(button, appliedLeading) { applier.get()?.appliedContent?.leading?.getOrNull(index) }
-                },
-                animated = animateBarItems,
-            )
+        if (leadingChanged) {
+            val textsByKey = leadingTexts.associateBy(NativeBarText::key)
+            leadingTextItems.keys.retainAll(textsByKey.keys)
+            leadingItems = shape.leading.mapIndexed { index, component ->
+                when (component) {
+                    is BarShape.TextShape -> leadingTextItems.getOrPut(component.key) {
+                        val text = textsByKey.getValue(component.key)
+                        LeadingTextItem().apply { update(text.text, text.width, text.accessibilityLabel) }
+                    }.item
+                    is BarShape.ButtonShape -> {
+                        if (component == previousShape?.leading?.getOrNull(index)) leadingItems[index]
+                        else prepareButton(component, appliedLeading) {
+                            applier.get()?.appliedContent?.leadingComponents?.getOrNull(index) as? NativeBarButton
+                        }
+                    }
+                }
+            }
+            appliedHasLeadingLabel = hasLeadingLabel
         }
         // rightBarButtonItems are ordered from the right edge; the API takes them left to right.
-        if (shape.trailing != previousShape?.trailing) {
+        val rightItems = if (trailingChanged) {
             trailingItems = shape.trailing.mapIndexed { index, button ->
                 if (button == previousShape?.trailing?.getOrNull(index)) trailingItems[index]
                 else prepareButton(button, appliedTrailing) { applier.get()?.appliedContent?.trailing?.getOrNull(index) }
             }
-            item.setRightBarButtonItems(
-                shape.trailing.flatMapIndexed { index, button ->
-                    val barItem = trailingItems[index]
-                    if (button.isPrimary && index > 0 && !shape.trailing[index - 1].isPrimary) {
-                        val separator = UIBarButtonItem(barButtonSystemItem = UIBarButtonSystemItemFixedSpace, target = null, action = null)
-                        separator.width = 8.0
-                        listOf(separator, barItem)
-                    } else {
-                        listOf(barItem)
-                    }
-                }.reversed(),
-                animated = animateBarItems,
-            )
-        }
-        if (pendingActivation.isNotEmpty()) {
-            dispatch_async(dispatch_get_main_queue()) {
-                val installedItems = item.leftBarButtonItems.orEmpty() + item.rightBarButtonItems.orEmpty()
-                pendingActivation.filter { it in installedItems }.forEach { button ->
-                    button.enabled = true
-                    button.customView?.userInteractionEnabled = true
+            shape.trailing.flatMapIndexed { index, button ->
+                val barItem = trailingItems[index]
+                if (button.isPrimary && index > 0 && !shape.trailing[index - 1].isPrimary) {
+                    val separator = UIBarButtonItem(barButtonSystemItem = UIBarButtonSystemItemFixedSpace, target = null, action = null)
+                    separator.width = 8.0
+                    listOf(separator, barItem)
+                } else {
+                    listOf(barItem)
                 }
+            }.reversed()
+        } else null
+        val leftItems = if (leadingChanged) {
+            if (hasLeadingLabel) listOf(leadingLabelItem.item) + leadingItems else leadingItems
+        } else null
+
+        fun enableInstalledItems() {
+            val installedItems = item.leftBarButtonItems.orEmpty() + item.rightBarButtonItems.orEmpty()
+            pendingActivation.filter { it in installedItems }.forEach { button ->
+                button.enabled = true
+                button.customView?.userInteractionEnabled = true
+            }
+        }
+        fun installItems(animated: Boolean) {
+            if (leftItems != null) item.setLeftBarButtonItems(leftItems, animated)
+            if (rightItems != null) item.setRightBarButtonItems(rightItems, animated)
+        }
+        if (fadeActionGroups) {
+            // 첫 선언이나 데이터 로딩으로 버튼 그룹이 추가될 때 UIKit이 즉시 교체하는 구간이다.
+            UIView.transitionWithView(
+                navigation.navigationBar,
+                duration = 0.18,
+                options = UIViewAnimationOptionTransitionCrossDissolve or
+                    UIViewAnimationOptionBeginFromCurrentState or UIViewAnimationOptionAllowUserInteraction,
+                animations = {
+                    installItems(animated = false)
+                    navigation.navigationBar.layoutIfNeeded()
+                },
+                completion = { enableInstalledItems() },
+            )
+        } else {
+            installItems(animated = animateBarItems)
+            if (pendingActivation.isNotEmpty()) {
+                dispatch_async(dispatch_get_main_queue()) { enableInstalledItems() }
             }
         }
         if (shape.toolbar != previousShape?.toolbar) {

@@ -19,6 +19,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
 import androidx.navigation3.runtime.NavEntry
 import platform.UIKit.UITabBarController
+import platform.UIKit.UIAccessibilityIsReduceMotionEnabled
 import platform.UIKit.UIBarButtonItem
 import platform.UIKit.UINavigationController
 import platform.UIKit.UIViewController
@@ -408,14 +409,18 @@ class StackCoordinatorTest {
             screen.bar.apply(NativeBarContent(null, emptyList(), listOf(report), emptyList()))
             assertTrue(item.rightBarButtonItems.isNullOrEmpty())
 
-            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.7))
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(1.1))
             assertTrue(assertIs<UIBarButtonItem>(item.rightBarButtonItems?.single()).enabled)
 
             screen.bar.apply(NativeBarContent(null, emptyList(), listOf(report, NativeBarButton("차단")), emptyList()))
             val block = assertIs<UIBarButtonItem>(item.rightBarButtonItems?.first())
             assertEquals("차단", block.accessibilityLabel)
             assertFalse(block.enabled)
-            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.05))
+            if (!UIAccessibilityIsReduceMotionEnabled()) {
+                NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.05))
+                assertFalse(block.enabled, "새 액션은 페이드 중에 활성화되지 않아야 합니다.")
+            }
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.4))
             assertTrue(block.enabled)
         } finally {
             window.hidden = true
@@ -472,6 +477,36 @@ class StackCoordinatorTest {
                 }
             }
             assertTrue(tabs.tabBarHidden, "push 완료 후 상세 화면에서 탭 바가 숨겨져야 합니다.")
+        } finally {
+            window.hidden = true
+            window.rootViewController = null
+            stack.dispose()
+        }
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    @Test
+    fun sharedPopRevealsTheTabBarWithoutASeparateUIKitAnimation() {
+        val (stack, navigation) = coordinator()
+        val tabs = RecordingTabs()
+        tabs.setViewControllers(listOf(navigation), animated = false)
+        val home = entry("home")
+        stack.update(listOf(home), onBack = {}, shared = listOf(entry("settings")), animated = false)
+        val window = UIWindow(frame = UIScreen.mainScreen.bounds)
+        window.rootViewController = tabs
+        window.makeKeyAndVisible()
+        try {
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.1))
+            assertTrue(tabs.tabBarHidden)
+            tabs.tabBar.alpha = 0.0
+            tabs.changes.clear()
+            stack.update(listOf(home), onBack = {})
+            assertNotNull(navigation.transitionCoordinator)
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.7))
+            assertFalse(tabs.tabBarHidden)
+            assertTrue(tabs.changes.contains(false to false))
+            assertFalse(tabs.changes.contains(false to true))
+            assertEquals(1.0, tabs.tabBar.alpha)
         } finally {
             window.hidden = true
             window.rootViewController = null

@@ -21,6 +21,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
 import platform.UIKit.NSDirectionalRectEdgeAll
 import platform.UIKit.UINavigationItemLargeTitleDisplayMode
+import platform.UIKit.UITransitionContextToViewControllerKey
 import platform.UIKit.UIViewController
 import platform.UIKit.addChildViewController
 import platform.UIKit.didMoveToParentViewController
@@ -114,30 +115,41 @@ internal class ComposeScreenController(
         val hidden = tabBarHiddenForScreen(controllers)
         if (tabs.tabBarHidden == hidden) return
         val transition = navigation.transitionCoordinator
-        if (hidden && animated && transition != null) {
-            if (tabBarHidePending) return
-            // 전환 중에는 탭 바 여백을 유지하고 화면과 함께 바만 페이드한다.
+        if (animated && transition != null) {
+            if (tabBarTransitionPending) return
+            val destination = transition.viewControllerForKey(UITransitionContextToViewControllerKey)
+            if (destination != null && destination != this) return
+
             val tabBar = tabs.tabBar
-            val initialAlpha = tabBar.alpha
-            tabBarHidePending = true
+            val visibleAlpha = tabBar.alpha.takeIf { it > 0.0 } ?: 1.0
+            tabBarTransitionPending = true
+            if (!hidden) {
+                // UIKit에 표시하되 투명하게 시작해 스와이프 진행률에 맞춰 드러낸다.
+                tabBar.alpha = 0.0
+                tabs.setTabBarHidden(false, animated = false)
+                tabBar.alpha = 0.0
+            }
             val queued = transition.animateAlongsideTransitionInView(
                 view = tabBar,
-                animation = { tabBar.alpha = 0.0 },
-                completion = {
-                    tabBarHidePending = false
-                    if (navigation.topViewController == this) {
-                        updateTabBarVisibility(animated = false, onlyIfSelected = true)
+                animation = { tabBar.alpha = if (hidden) 0.0 else visibleAlpha },
+                completion = { context ->
+                    tabBarTransitionPending = false
+                    val cancelled = context?.isCancelled() == true
+                    if (tabs.selectedViewController == navigation && (cancelled || navigation.topViewController == this)) {
+                        val finalHidden = if (cancelled) !hidden else hidden
+                        if (tabs.tabBarHidden != finalHidden) tabs.setTabBarHidden(finalHidden, animated = false)
                     }
-                    tabBar.alpha = initialAlpha
+                    tabBar.alpha = visibleAlpha
                 },
             )
             if (queued) return
-            tabBarHidePending = false
+            tabBarTransitionPending = false
+            tabBar.alpha = visibleAlpha
         }
-        tabs.setTabBarHidden(hidden, animated && !hidden)
+        if (tabs.tabBarHidden != hidden) tabs.setTabBarHidden(hidden, animated && !hidden)
     }
 
-    private var tabBarHidePending = false
+    private var tabBarTransitionPending = false
     private var appearance = 0L
 
     private val composeController = ComposeUIViewController {
@@ -151,6 +163,7 @@ internal class ComposeScreenController(
         CompositionLocalProvider(
             LocalPlatformWindowInsets provides screenInsets,
             LocalNativeScreenProvidable provides true,
+            LocalNativeFloatingActionButtonHost provides UIKitFloatingActionButton,
             LocalNativeNavigationBarHiddenProvidable provides (hidesNavigationBar == true),
             LocalNativeScrollHost provides proxy,
             LocalNativeBarState provides barState,
@@ -168,6 +181,7 @@ internal class ComposeScreenController(
         barState.listener = bar::apply
         barState.searchListener = bar::applySearch
         barState.subtitleListener = bar::applySubtitle
+        barState.leadingLabelListener = bar::applyLeadingLabel
     }
 
     override fun loadView() {
