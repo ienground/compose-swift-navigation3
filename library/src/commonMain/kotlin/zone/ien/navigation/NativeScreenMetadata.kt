@@ -72,6 +72,23 @@ public fun nativeScreen(
     put(NativeInitialTrailing, initialTrailing)
 }
 
+/**
+ * 화면의 실제 액션이 준비되기 전까지 표시할 비활성 버튼을 만듭니다.
+ * [nativeScreen]의 `initialTrailing`에 전달합니다.
+ */
+public fun nativeBarTransitionPlaceholder(
+    title: String,
+    systemImage: String? = null,
+    image: Painter? = null,
+    isPrimary: Boolean = false,
+): NativeBarButton = NativeBarButton(
+    title = title,
+    systemImage = systemImage,
+    image = image,
+    isPrimary = isPrimary,
+    enabled = false,
+)
+
 internal val NavEntry<*>.nativeInitialTrailing: List<NativeBarButton>?
     get() = metadata[NativeInitialTrailing]
 

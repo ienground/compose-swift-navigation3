@@ -360,7 +360,7 @@ class StackCoordinatorTest {
     fun initialTrailingItemsStayUntilPushCompletes() {
         val (stack, navigation) = coordinator()
         val home = entry("home")
-        val subscribe = NativeBarButton("구독", systemImage = "bell", enabled = false)
+        val subscribe = nativeBarTransitionPlaceholder("구독", systemImage = "bell")
         val detail = NavEntry("detail", metadata = nativeScreen(initialTrailing = listOf(subscribe))) {}
         stack.update(listOf(home), onBack = {})
         val window = UIWindow(frame = UIScreen.mainScreen.bounds)
@@ -375,7 +375,8 @@ class StackCoordinatorTest {
                 .filterIsInstance<UIBarButtonItem>().map { it.accessibilityLabel }
 
             assertEquals(listOf("구독"), labels())
-            val initialButton = screen.navigationItem.rightBarButtonItems?.single()
+            val initialButton = assertIs<UIBarButtonItem>(screen.navigationItem.rightBarButtonItems?.single())
+            assertFalse(initialButton.enabled)
             screen.bar.apply(NativeBarContent(null, emptyList(), listOf(subscribe, NativeBarButton("수정")), emptyList()))
             screen.bar.apply(NativeBarContent(null, emptyList(), listOf(subscribe, NativeBarButton("신고")), emptyList()))
             assertEquals(listOf("구독"), labels())
