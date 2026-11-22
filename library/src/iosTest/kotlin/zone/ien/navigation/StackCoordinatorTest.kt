@@ -19,7 +19,6 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
 import androidx.navigation3.runtime.NavEntry
 import platform.UIKit.UITabBarController
-import platform.UIKit.UIAccessibilityIsReduceMotionEnabled
 import platform.UIKit.UIBarButtonItem
 import platform.UIKit.UINavigationController
 import platform.UIKit.UIViewController
@@ -459,28 +458,28 @@ class StackCoordinatorTest {
         window.rootViewController = navigation
         window.makeKeyAndVisible()
         try {
-            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.1))
+            val homeController = assertNotNull(navigation.topViewController)
+            awaitUIKit("홈 화면이 테스트 윈도에 나타나야 합니다.") {
+                homeController.viewIfLoaded?.window == window
+            }
             stack.update(listOf(home, entry("detail")), onBack = {})
-            assertNotNull(navigation.transitionCoordinator)
+            assertNotNull(navigation.transitionCoordinator, "화면에 연결된 UIKit push가 시작되어야 합니다.")
             val screen = assertIs<ComposeScreenController>(navigation.topViewController)
             val item = screen.navigationItem
             val report = NativeBarButton("신고")
             screen.bar.apply(NativeBarContent(null, emptyList(), listOf(report), emptyList()))
-            assertTrue(item.rightBarButtonItems.isNullOrEmpty())
+            assertTrue(item.rightBarButtonItems.isNullOrEmpty(), "push 중에는 새 액션이 표시되지 않아야 합니다.")
 
-            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(1.1))
-            assertTrue(assertIs<UIBarButtonItem>(item.rightBarButtonItems?.single()).enabled)
+            awaitUIKit("push 완료 후 신고 버튼이 표시되고 활성화되어야 합니다.") {
+                val button = item.rightBarButtonItems?.singleOrNull() as? UIBarButtonItem
+                navigation.transitionCoordinator == null && button?.accessibilityLabel == "신고" && button.enabled
+            }
 
             screen.bar.apply(NativeBarContent(null, emptyList(), listOf(report, NativeBarButton("차단")), emptyList()))
             val block = assertIs<UIBarButtonItem>(item.rightBarButtonItems?.first())
             assertEquals("차단", block.accessibilityLabel)
-            assertFalse(block.enabled)
-            if (!UIAccessibilityIsReduceMotionEnabled()) {
-                NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.05))
-                assertFalse(block.enabled, "새 액션은 페이드 중에 활성화되지 않아야 합니다.")
-            }
-            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.4))
-            assertTrue(block.enabled)
+            assertFalse(block.enabled, "새 차단 버튼은 비활성 상태로 추가되어야 합니다.")
+            awaitUIKit("버튼 교체가 끝나면 차단 버튼이 활성화되어야 합니다.") { block.enabled }
         } finally {
             window.hidden = true
             window.rootViewController = null
