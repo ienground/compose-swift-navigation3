@@ -532,11 +532,15 @@ private class TabsLayout(
         val newItems = tabs.map { TabAppearance(it.title, it.systemImage, it.image, it.selectedImage) }
         if (newItems != items) {
             stacks.forEachIndexed { index, stack ->
-                stack.navigationController.tabBarItem = UITabBarItem(
-                    title = newItems[index].title,
-                    image = newItems[index].image ?: UIImage.systemImageNamed(newItems[index].systemImage),
-                    selectedImage = newItems[index].selectedImage,
-                )
+                val appearance = newItems[index]
+                if (appearance == items.getOrNull(index)) return@forEachIndexed
+                val navigation = stack.navigationController
+                val badge = navigation.tabBarItem.badgeValue
+                navigation.tabBarItem = UITabBarItem(
+                    title = appearance.title,
+                    image = appearance.image ?: UIImage.systemImageNamed(appearance.systemImage),
+                    selectedImage = appearance.selectedImage,
+                ).apply { badgeValue = badge }
             }
             items = newItems
         }

@@ -18,33 +18,55 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
 import platform.CoreGraphics.CGPointMake
 import platform.CoreGraphics.CGRectMake
+import platform.Foundation.NSDate
+import platform.Foundation.NSRunLoop
+import platform.Foundation.dateWithTimeIntervalSinceNow
+import platform.Foundation.runUntilDate
 import platform.UIKit.UIControlEventValueChanged
+import platform.UIKit.UIScreen
 import platform.UIKit.UIView
+import platform.UIKit.UIViewController
+import platform.UIKit.UIWindow
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalForeignApi::class)
 class ScrollProxyTest {
     @Test
-    fun refreshControlIsRemovedWhenTheLastOwnerDetaches() {
+    fun refreshControlStopsWhenActiveOwnerDetachesAndIsRemovedWithLastOwner() {
         val proxy = ScrollProxy()
-        val first = Any()
-        val second = Any()
-        var calls = 0
-        proxy.attachRefresh(first) { calls++ }
-        val control = assertNotNull(proxy.scrollView.refreshControl)
-        proxy.attachRefresh(second) { calls += 10 }
-        control.sendActionsForControlEvents(UIControlEventValueChanged)
-        assertEquals(10, calls)
-        proxy.detachRefresh(second)
-        control.sendActionsForControlEvents(UIControlEventValueChanged)
-        assertEquals(11, calls)
-        proxy.detachRefresh(first)
-        assertNull(proxy.scrollView.refreshControl)
-        control.sendActionsForControlEvents(UIControlEventValueChanged)
-        assertEquals(11, calls)
+        val window = UIWindow(frame = UIScreen.mainScreen.bounds)
+        window.rootViewController = UIViewController().apply { view = proxy.scrollView }
+        window.makeKeyAndVisible()
+        try {
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.1))
+            val first = Any()
+            val second = Any()
+            var calls = 0
+            proxy.attachRefresh(first) { calls++ }
+            val control = assertNotNull(proxy.scrollView.refreshControl)
+            proxy.attachRefresh(second) { calls += 10 }
+            control.beginRefreshing()
+            control.sendActionsForControlEvents(UIControlEventValueChanged)
+            assertEquals(10, calls)
+            assertTrue(control.refreshing, "등록을 해제하기 전에 새로고침이 진행 중이어야 합니다.")
+            proxy.detachRefresh(second)
+            assertFalse(control.refreshing, "활성 등록이 해제되면 진행 표시를 종료해야 합니다.")
+            assertEquals(control, proxy.scrollView.refreshControl)
+            control.sendActionsForControlEvents(UIControlEventValueChanged)
+            assertEquals(11, calls)
+            proxy.detachRefresh(first)
+            assertNull(proxy.scrollView.refreshControl)
+            control.sendActionsForControlEvents(UIControlEventValueChanged)
+            assertEquals(11, calls)
+        } finally {
+            window.hidden = true
+            window.rootViewController = null
+        }
     }
 
     @Test

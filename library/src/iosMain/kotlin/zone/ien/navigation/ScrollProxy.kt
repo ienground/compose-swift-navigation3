@@ -85,8 +85,10 @@ internal class ScrollProxy(private val screenBottomInset: (Double) -> Double = {
     }
 
     override fun detachRefresh(owner: Any) {
-        if (refreshActions.remove(owner) == null || refreshActions.isNotEmpty()) return
-        refreshControl.endRefreshing()
+        val wasActive = refreshActions.keys.lastOrNull() == owner
+        if (refreshActions.remove(owner) == null) return
+        if (wasActive) refreshControl.endRefreshing()
+        if (refreshActions.isNotEmpty()) return
         if (scrollView.refreshControl == refreshControl) scrollView.refreshControl = previousRefreshControl
         previousRefreshControl = null
     }
