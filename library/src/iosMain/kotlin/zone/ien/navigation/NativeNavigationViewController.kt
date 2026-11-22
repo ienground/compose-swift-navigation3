@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package zone.ien.navigation
 
 import androidx.compose.runtime.key
@@ -5,11 +7,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.LocalSystemTheme
+import androidx.compose.ui.SystemTheme
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.uikit.LocalUIViewController
 import androidx.compose.ui.unit.Density
@@ -24,6 +31,7 @@ import platform.Foundation.create
 import platform.posix.memcpy
 import platform.UIKit.UIColor
 import platform.UIKit.UIImage
+import platform.UIKit.UITraitCollection
 import platform.UIKit.UIScreen
 import platform.UIKit.UINavigationController
 import platform.UIKit.UITabBarController
@@ -33,6 +41,7 @@ import platform.UIKit.UIView
 import platform.UIKit.UIViewAutoresizingFlexibleHeight
 import platform.UIKit.UIViewAutoresizingFlexibleWidth
 import platform.UIKit.UIViewController
+import platform.UIKit.UIUserInterfaceStyle
 import platform.UIKit.addChildViewController
 import platform.UIKit.didMoveToParentViewController
 import platform.UIKit.removeFromParentViewController
@@ -187,7 +196,7 @@ private class RootNavigationHost(private val root: NativeNavigationRootControlle
             key(index) {
                 TabState(
                     tab.title, tab.systemImage, entriesPerTab[index], tab.onBack,
-                    rememberNativeTabImage(tab.image), rememberNativeTabImage(tab.selectedImage),
+                    rememberNativeTabImage(tab.image), rememberNativeTabImage(tab.selectedImage), tab.badgeCount,
                 )
             }
         }
@@ -230,6 +239,7 @@ internal class TabState(
     val onBack: () -> Unit,
     val image: UIImage? = null,
     val selectedImage: UIImage? = null,
+    val badgeCount: Int? = null,
 )
 
 private data class TabAppearance(
@@ -245,6 +255,7 @@ internal class SharedState(
     val onBack: () -> Unit,
 )
 
+@OptIn(InternalComposeUiApi::class)
 internal class NativeNavigationRootController(
     content: @Composable () -> Unit,
     restoredState: Map<String, Any?>?,
@@ -252,6 +263,7 @@ internal class NativeNavigationRootController(
 ) : UIViewController(nibName = null, bundle = null) {
 
     private val leases = ContentLeases()
+    private val systemTheme = mutableStateOf(SystemTheme.Unknown)
     val titleImages = TitleImages()
     private val navigationHost = RootNavigationHost(this)
     private val hostContent: @Composable () -> Unit = {
@@ -262,6 +274,7 @@ internal class NativeNavigationRootController(
             // density (string and image resource qualifiers).
             LocalUIViewController provides this,
             LocalDensity provides Density(mainScreenScale()),
+            LocalSystemTheme provides systemTheme.value,
         ) { content() }
     }
     private val restoring = restoredState != null
@@ -309,8 +322,30 @@ internal class NativeNavigationRootController(
 
     override fun viewDidLoad() {
         super.viewDidLoad()
+        updateSystemTheme()
         view.backgroundColor = UIColor.systemBackgroundColor
         startHost()
+    }
+
+    override fun viewWillAppear(animated: Boolean) {
+        super.viewWillAppear(animated)
+        updateSystemTheme()
+    }
+
+    override fun traitCollectionDidChange(previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        updateSystemTheme()
+    }
+
+    private fun updateSystemTheme() {
+        val theme = when (traitCollection.userInterfaceStyle) {
+            UIUserInterfaceStyle.UIUserInterfaceStyleDark -> SystemTheme.Dark
+            UIUserInterfaceStyle.UIUserInterfaceStyleLight -> SystemTheme.Light
+            else -> SystemTheme.Unknown
+        }
+        if (systemTheme.value == theme) return
+        systemTheme.value = theme
+        Snapshot.sendApplyNotifications()
     }
 
     /**
@@ -360,7 +395,7 @@ internal class NativeNavigationRootController(
         if (current != null && current.declaration === declaration) {
             current.update(entries, onBack)
         } else {
-            show(StackLayout(declaration, leases, titleImages).also { it.update(entries, onBack) })
+            show(StackLayout(declaration, leases, titleImages, systemTheme).also { it.update(entries, onBack) })
         }
     }
 
@@ -376,7 +411,7 @@ internal class NativeNavigationRootController(
         if (current != null && current.declaration === declaration) {
             current.update(tabs, selectedTab, onTabSelected, shared, tint)
         } else {
-            show(TabsLayout(declaration, leases, titleImages).also { it.update(tabs, selectedTab, onTabSelected, shared, tint) })
+            show(TabsLayout(declaration, leases, titleImages, systemTheme).also { it.update(tabs, selectedTab, onTabSelected, shared, tint) })
         }
     }
 
@@ -446,8 +481,9 @@ private class StackLayout(
     override val declaration: Any,
     leases: ContentLeases,
     titleImages: TitleImages,
+    systemTheme: State<SystemTheme>,
 ) : RootLayout {
-    private val stack = StackCoordinator(UINavigationController(), leases, titleImages)
+    private val stack = StackCoordinator(UINavigationController(), leases, titleImages, systemTheme = systemTheme)
     override val controller: UIViewController get() = stack.navigationController
 
     fun update(entries: List<NavEntry<*>>, onBack: () -> Unit) = stack.update(entries, onBack)
@@ -459,6 +495,7 @@ private class TabsLayout(
     override val declaration: Any,
     private val leases: ContentLeases,
     private val titleImages: TitleImages,
+    private val systemTheme: State<SystemTheme>,
 ) : RootLayout {
     private val tabBarController = UITabBarController()
     private val defaultTint = tabBarController.tabBar.tintColor
@@ -488,18 +525,22 @@ private class TabsLayout(
         this.onTabSelected = onTabSelected
         if (stacks.size != tabs.size) {
             stacks.forEach { it.dispose() }
-            stacks = tabs.map { StackCoordinator(UINavigationController(), leases, titleImages) }
+            stacks = tabs.map { StackCoordinator(UINavigationController(), leases, titleImages, systemTheme = systemTheme) }
             tabBarController.setViewControllers(stacks.map { it.navigationController }, animated = false)
             items = emptyList()
         }
         val newItems = tabs.map { TabAppearance(it.title, it.systemImage, it.image, it.selectedImage) }
         if (newItems != items) {
             stacks.forEachIndexed { index, stack ->
-                stack.navigationController.tabBarItem = UITabBarItem(
-                    title = newItems[index].title,
-                    image = newItems[index].image ?: UIImage.systemImageNamed(newItems[index].systemImage),
-                    selectedImage = newItems[index].selectedImage,
-                )
+                val appearance = newItems[index]
+                if (appearance == items.getOrNull(index)) return@forEachIndexed
+                val navigation = stack.navigationController
+                val badge = navigation.tabBarItem.badgeValue
+                navigation.tabBarItem = UITabBarItem(
+                    title = appearance.title,
+                    image = appearance.image ?: UIImage.systemImageNamed(appearance.systemImage),
+                    selectedImage = appearance.selectedImage,
+                ).apply { badgeValue = badge }
             }
             items = newItems
         }
@@ -509,7 +550,13 @@ private class TabsLayout(
         val showing = tabBarController.selectedIndex.toInt()
         val selected = if (selectedTab in tabs.indices) selectedTab else showing
         tabs.forEachIndexed { index, tab ->
-            stacks[index].update(
+            val stack = stacks[index]
+            tab.badgeCount?.let { count ->
+                val item = stack.navigationController.tabBarItem
+                val badge = count.takeIf { it > 0 }?.toString()
+                if (item.badgeValue != badge) item.badgeValue = badge
+            }
+            stack.update(
                 entries = tab.entries,
                 onBack = tab.onBack,
                 shared = if (index == selected) shared.entries else emptyList(),

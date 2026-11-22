@@ -11,12 +11,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import platform.UIKit.UIImageRenderingMode
 import platform.UIKit.childViewControllers
+import platform.UIKit.accessibilityLabel
+import platform.UIKit.navigationItem
 import platform.UIKit.tabBarItem
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
 import androidx.navigation3.runtime.NavEntry
 import platform.UIKit.UITabBarController
+import platform.UIKit.UIAccessibilityIsReduceMotionEnabled
+import platform.UIKit.UIBarButtonItem
 import platform.UIKit.UINavigationController
 import platform.UIKit.UIViewController
 import platform.UIKit.hidesBottomBarWhenPushed
@@ -27,10 +31,47 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 
 /** A stack in a tab: its own entries, then NativeTabs' shared screens (UIKit, no window). */
 class StackCoordinatorTest {
+
+    @Test
+    fun `탭 제목이나 아이콘이 바뀌어도 null 배지는 기존 값을 유지한다`() {
+        val controller = NativeNavigationRootController(content = {}, restoredState = null, stateVersion = 1)
+        controller.loadViewIfNeeded()
+        val declaration = Any()
+        val home = entry("home")
+        val settings = entry("settings")
+
+        fun update(title: String, icon: String, count: Int?) {
+            controller.updateTabs(
+                declaration = declaration,
+                tabs = listOf(
+                    TabState(title, "house", listOf(home), onBack = {}, badgeCount = count),
+                    TabState("Settings", icon, listOf(settings), onBack = {}),
+                ),
+                selectedTab = 0,
+                onTabSelected = {},
+                shared = SharedState(emptyList(), {}),
+            )
+        }
+
+        update("Home", "gearshape", 3)
+        val tabs = assertIs<UITabBarController>(controller.childViewControllers.single())
+        val homeTab = assertIs<UINavigationController>(tabs.viewControllers!!.first())
+        assertEquals("3", homeTab.tabBarItem.badgeValue)
+
+        update("Today", "gearshape.fill", null)
+        assertEquals("Today", homeTab.tabBarItem.title)
+        assertEquals("3", homeTab.tabBarItem.badgeValue)
+
+        update("Today", "gearshape.fill", 0)
+        assertNull(homeTab.tabBarItem.badgeValue)
+    }
 
     @Test
     fun `스택의 네이티브 강조색은 변경과 기본색 복원을 반영한다`() = verifyNavigationTint(false)
@@ -308,9 +349,142 @@ class StackCoordinatorTest {
 
     private class RecordingNavigation : UINavigationController(nibName = null, bundle = null) {
         var pushedWithHiddenBar: Boolean? = null
+        var pushRequestedAnimation: Boolean? = null
+        val navigationBarChanges = mutableListOf<Pair<Boolean, Boolean>>()
+
+        override fun setNavigationBarHidden(hidden: Boolean, animated: Boolean) {
+            navigationBarChanges += hidden to animated
+            super.setNavigationBarHidden(hidden, animated)
+        }
+
         override fun pushViewController(viewController: UIViewController, animated: Boolean) {
             pushedWithHiddenBar = viewController.hidesBottomBarWhenPushed
+            pushRequestedAnimation = animated
             super.pushViewController(viewController, animated)
+        }
+    }
+
+    private fun awaitUIKit(message: String, condition: () -> Boolean) {
+        val deadline = TimeSource.Monotonic.markNow() + 5.seconds
+        while (!condition() && deadline.hasNotPassedNow()) {
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.01))
+        }
+        assertTrue(condition(), message)
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    @Test
+    fun pushAnimatesNavigationBarHidingAndPopRestoresVisibility() {
+        val navigation = RecordingNavigation()
+        val stack = StackCoordinator(navigation, ContentLeases())
+        val home = entry("home")
+        val detail = NavEntry("detail", metadata = nativeScreen(hidesNavigationBar = true)) {}
+        stack.update(listOf(home), onBack = {})
+        val window = UIWindow(frame = UIScreen.mainScreen.bounds)
+        window.rootViewController = navigation
+        window.makeKeyAndVisible()
+        try {
+            val homeController = assertNotNull(navigation.topViewController)
+            awaitUIKit("홈 화면이 테스트 윈도에 나타나야 합니다.") { homeController.viewIfLoaded?.window == window }
+            stack.update(listOf(home, detail), onBack = {})
+            val animatingPush = navigation.transitionCoordinator != null
+            assertEquals(true, navigation.pushRequestedAnimation, "상세 push는 UIKit에 애니메이션을 요청해야 합니다.")
+            awaitUIKit("상세 push가 완료되면 내비게이션 바가 숨겨져야 합니다.") {
+                navigation.topViewController != homeController &&
+                    navigation.transitionCoordinator == null && navigation.navigationBarHidden
+            }
+            assertTrue(
+                navigation.navigationBarChanges.any { (hidden, animated) -> hidden && (!animatingPush || animated) },
+                "UIKit 전환이 시작되면 상단 바도 애니메이션으로 숨겨야 합니다. 호출 기록 ${navigation.navigationBarChanges}",
+            )
+
+            stack.update(listOf(home), onBack = {})
+            awaitUIKit("pop이 완료되면 홈 화면의 내비게이션 바가 복원되어야 합니다.") {
+                navigation.topViewController == homeController &&
+                    navigation.transitionCoordinator == null && !navigation.navigationBarHidden
+            }
+        } finally {
+            window.hidden = true
+            window.rootViewController = null
+            stack.dispose()
+        }
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    @Test
+    fun initialTrailingItemsStayUntilPushCompletes() {
+        val (stack, navigation) = coordinator()
+        val home = entry("home")
+        val subscribe = nativeBarTransitionPlaceholder("구독", systemImage = "bell")
+        val detail = NavEntry("detail", metadata = nativeScreen(initialTrailing = listOf(subscribe))) {}
+        stack.update(listOf(home), onBack = {})
+        val window = UIWindow(frame = UIScreen.mainScreen.bounds)
+        window.rootViewController = navigation
+        window.makeKeyAndVisible()
+        try {
+            val homeController = assertNotNull(navigation.topViewController)
+            awaitUIKit("홈 화면이 테스트 윈도에 나타나야 합니다.") { homeController.viewIfLoaded?.window == window }
+            stack.update(listOf(home, detail), onBack = {})
+            val screen = assertIs<ComposeScreenController>(navigation.topViewController)
+            fun labels() = screen.navigationItem.rightBarButtonItems.orEmpty()
+                .filterIsInstance<UIBarButtonItem>().map { it.accessibilityLabel }
+
+            assertEquals(listOf("구독"), labels(), "상세 화면을 열면 초기 버튼이 먼저 표시되어야 합니다.")
+            val initialButton = assertIs<UIBarButtonItem>(screen.navigationItem.rightBarButtonItems?.single())
+            assertFalse(initialButton.enabled, "초기 버튼은 비활성 상태여야 합니다.")
+            screen.bar.apply(NativeBarContent(null, emptyList(), listOf(subscribe, NativeBarButton("수정")), emptyList()))
+            screen.bar.apply(NativeBarContent(null, emptyList(), listOf(subscribe, NativeBarButton("신고")), emptyList()))
+            if (navigation.transitionCoordinator != null) {
+                assertEquals(listOf("구독"), labels(), "전환이 진행되는 동안 초기 버튼이 유지되어야 합니다.")
+            }
+
+            awaitUIKit("전환 완료 후 마지막으로 선언한 버튼이 표시되어야 합니다.") {
+                navigation.transitionCoordinator == null && labels() == listOf("신고", "구독")
+            }
+            assertEquals(initialButton, screen.navigationItem.rightBarButtonItems?.last(), "동일한 초기 버튼은 재사용되어야 합니다.")
+        } finally {
+            window.hidden = true
+            window.rootViewController = null
+            stack.dispose()
+        }
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    @Test
+    fun unseededActionsWaitForPushAndNewActionsStartDisabled() {
+        val (stack, navigation) = coordinator()
+        val home = entry("home")
+        stack.update(listOf(home), onBack = {})
+        val window = UIWindow(frame = UIScreen.mainScreen.bounds)
+        window.rootViewController = navigation
+        window.makeKeyAndVisible()
+        try {
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.1))
+            stack.update(listOf(home, entry("detail")), onBack = {})
+            assertNotNull(navigation.transitionCoordinator)
+            val screen = assertIs<ComposeScreenController>(navigation.topViewController)
+            val item = screen.navigationItem
+            val report = NativeBarButton("신고")
+            screen.bar.apply(NativeBarContent(null, emptyList(), listOf(report), emptyList()))
+            assertTrue(item.rightBarButtonItems.isNullOrEmpty())
+
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(1.1))
+            assertTrue(assertIs<UIBarButtonItem>(item.rightBarButtonItems?.single()).enabled)
+
+            screen.bar.apply(NativeBarContent(null, emptyList(), listOf(report, NativeBarButton("차단")), emptyList()))
+            val block = assertIs<UIBarButtonItem>(item.rightBarButtonItems?.first())
+            assertEquals("차단", block.accessibilityLabel)
+            assertFalse(block.enabled)
+            if (!UIAccessibilityIsReduceMotionEnabled()) {
+                NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.05))
+                assertFalse(block.enabled, "새 액션은 페이드 중에 활성화되지 않아야 합니다.")
+            }
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.4))
+            assertTrue(block.enabled)
+        } finally {
+            window.hidden = true
+            window.rootViewController = null
+            stack.dispose()
         }
     }
 
@@ -362,6 +536,36 @@ class StackCoordinatorTest {
                 }
             }
             assertTrue(tabs.tabBarHidden, "push 완료 후 상세 화면에서 탭 바가 숨겨져야 합니다.")
+        } finally {
+            window.hidden = true
+            window.rootViewController = null
+            stack.dispose()
+        }
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    @Test
+    fun sharedPopRevealsTheTabBarWithoutASeparateUIKitAnimation() {
+        val (stack, navigation) = coordinator()
+        val tabs = RecordingTabs()
+        tabs.setViewControllers(listOf(navigation), animated = false)
+        val home = entry("home")
+        stack.update(listOf(home), onBack = {}, shared = listOf(entry("settings")), animated = false)
+        val window = UIWindow(frame = UIScreen.mainScreen.bounds)
+        window.rootViewController = tabs
+        window.makeKeyAndVisible()
+        try {
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.1))
+            assertTrue(tabs.tabBarHidden)
+            tabs.tabBar.alpha = 0.0
+            tabs.changes.clear()
+            stack.update(listOf(home), onBack = {})
+            assertNotNull(navigation.transitionCoordinator)
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.7))
+            assertFalse(tabs.tabBarHidden)
+            assertTrue(tabs.changes.contains(false to false))
+            assertFalse(tabs.changes.contains(false to true))
+            assertEquals(1.0, tabs.tabBar.alpha)
         } finally {
             window.hidden = true
             window.rootViewController = null

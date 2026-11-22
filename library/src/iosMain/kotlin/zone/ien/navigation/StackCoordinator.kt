@@ -1,4 +1,9 @@
+@file:Suppress("DEPRECATION")
+
 package zone.ien.navigation
+
+import androidx.compose.runtime.State
+import androidx.compose.ui.SystemTheme
 
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.navigation3.runtime.NavEntry
@@ -29,6 +34,7 @@ internal class StackCoordinator(
     private val leases: ContentLeases,
     private val titleImages: TitleImages = TitleImages(),
     private val isTransitioning: () -> Boolean = { navigationController.transitionCoordinator != null },
+    private val systemTheme: State<SystemTheme>? = null,
 ) {
     private var screens: List<EntryScreen> = emptyList()
     private var target: List<NavEntry<*>> = emptyList()
@@ -39,6 +45,7 @@ internal class StackCoordinator(
     private var onSharedBack: () -> Unit = {}
     private var animated = true
     private var initialized = false
+    private var managesNavigationBar = false
 
     private val delegate = object : NSObject(), UINavigationControllerDelegateProtocol {
         override fun navigationController(
@@ -96,19 +103,34 @@ internal class StackCoordinator(
         if (isTransitioning()) return // re-applied in didShow
 
         val update = stackUpdate(screens.map { it.contentKey }, target.map { it.contentKey })
+        if (!managesNavigationBar) {
+            managesNavigationBar = target.any { it.nativeHidesNavigationBar != null }
+        }
+        val defaultBarHidden = false.takeIf { managesNavigationBar }
+        val previousTopBarHidden = screens.lastOrNull()?.controller?.hidesNavigationBar
         for (index in 0 until update.keep) {
             screens[index].shared = index >= sharedFrom
-            screens[index].entry = target[index]
+            val screen = screens[index]
+            val entry = target[index]
+            screen.entry = entry
+            screen.controller.hidesNavigationBar = entry.nativeHidesNavigationBar ?: defaultBarHidden
         }
         if (update is StackUpdate.None) {
-            screens.last().controller.updateTabBarVisibility(animated = false, onlyIfSelected = true)
+            val controller = screens.last().controller
+            if (previousTopBarHidden != controller.hidesNavigationBar && navigationController.topViewController == controller) {
+                controller.updateNavigationBarVisibility(animated = this.animated && controller.viewIfLoaded?.window != null)
+            }
+            controller.updateTabBarVisibility(animated = false, onlyIfSelected = true)
             return
         }
 
         val kept = screens.take(update.keep)
         val removed = screens.drop(update.keep)
         val created = target.drop(update.keep).mapIndexed { offset, entry ->
-            EntryScreen(entry, leases, titleImages).also { it.shared = update.keep + offset >= sharedFrom }
+            EntryScreen(entry, leases, titleImages, systemTheme).apply {
+                shared = update.keep + offset >= sharedFrom
+                controller.hidesNavigationBar = entry.nativeHidesNavigationBar ?: defaultBarHidden
+            }
         }
         val next = kept + created
         val animated = initialized && this.animated

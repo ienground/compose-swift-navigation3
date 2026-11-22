@@ -124,4 +124,7 @@ mavenPublishing {
 tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
     standalone.set(false)
     providers.gradleProperty("iosSimulatorDevice").orNull?.let { device.set(it) }
+    testLogging {
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
 }

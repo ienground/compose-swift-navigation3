@@ -41,6 +41,7 @@ internal val LocalNativeTabBarTint = staticCompositionLocalOf { Color.Unspecifie
  * @param systemImage SF Symbol name used when [image] is absent.
  * @param image custom tab icon, rendered as a UIKit template image.
  * @param selectedImage selected-state icon; omitted uses the default tab image.
+ * @param badgeCount 탭 배지에 표시할 개수. 0 이하는 배지를 숨기고, null이면 기존 배지를 유지합니다.
  * @param onBack called once per screen popped in this tab. It must remove the last entry of
  *   [backStack], as `NavDisplay`'s `onBack` does.
  */
@@ -50,8 +51,18 @@ public class NativeTab<T : Any>(
     public val backStack: List<T>,
     public val image: Painter?,
     public val selectedImage: Painter? = null,
+    public val badgeCount: Int?,
     public val onBack: () -> Unit = { (backStack as? MutableList<T>)?.removeLastOrNull() },
 ) {
+    public constructor(
+        title: String,
+        systemImage: String = "",
+        backStack: List<T>,
+        image: Painter?,
+        selectedImage: Painter? = null,
+        onBack: () -> Unit = { (backStack as? MutableList<T>)?.removeLastOrNull() },
+    ) : this(title, systemImage, backStack, image, selectedImage, badgeCount = null, onBack = onBack)
+
     public constructor(
         title: String,
         systemImage: String,

@@ -9,8 +9,31 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 
+/** 내비게이션 바 왼쪽에 배치할 수 있는 항목입니다. */
+public sealed interface NativeBarComponent
+
+/**
+ * 내비게이션 바에 표시할 읽기 전용 텍스트입니다.
+ *
+ * @param key 같은 내비게이션 바 안에서 고유한 항목 키
+ * @param text 화면에 표시할 문구
+ * @param width 항목에 확보할 너비(포인트)
+ * @param accessibilityLabel 화면 읽기 기능에 제공할 문구. null이면 [text]를 읽습니다.
+ */
+@Immutable
+public data class NativeBarText(
+    public val key: String,
+    public val text: String,
+    public val width: Float,
+    public val accessibilityLabel: String? = null,
+) : NativeBarComponent {
+    init {
+        require(width.isFinite() && width > 0)
+    }
+}
 /**
  * A button of the navigation bar or the bottom toolbar.
  *
@@ -19,6 +42,8 @@ import androidx.compose.ui.graphics.painter.Painter
  * @param image 사용자 이미지. 지정하면 [systemImage]보다 우선하며, iOS에서는 네이티브 tint를 적용한다.
  * @param badge 0이면 숨김, 양수이면 숫자, 음수이면 표시점이다. iOS 18.2 이상에서 UIKit 버튼에 표시한다.
  * @param isPrimary 주요 액션이면 UIKit 강조 스타일을 적용하고, 오른쪽 일반 액션 그룹과 간격을 둔다.
+ * @param tintColor 이 버튼에 적용할 UIKit 틴트 색이다. [Color.Unspecified]이면 시스템 색을 따른다.
+ * 일반 버튼은 아이콘이나 텍스트에, iOS 26 이상의 강조 버튼은 배경에 색이 적용된다.
  * @param menu when not empty, tapping the button opens this menu (`UIMenu` on iOS) and
  *   [onClick] is not used.
  */
@@ -31,8 +56,21 @@ public class NativeBarButton(
     public val image: Painter? = null,
     public val badge: Int = 0,
     public val isPrimary: Boolean = false,
+    public val tintColor: Color,
     public val onClick: () -> Unit = {},
-) {
+) : NativeBarComponent {
+    /** 기존 강조 스타일 인수를 지원하는 생성자입니다. */
+    public constructor(
+        title: String,
+        systemImage: String? = null,
+        enabled: Boolean = true,
+        menu: List<NativeMenuAction> = emptyList(),
+        image: Painter? = null,
+        badge: Int = 0,
+        isPrimary: Boolean = false,
+        onClick: () -> Unit = {},
+    ) : this(title, systemImage, enabled, menu, image, badge, isPrimary, Color.Unspecified, onClick)
+
     /** 기존 생성자의 위치 인수와 기본 인수 호출을 유지한다. */
     public constructor(
         title: String,
@@ -104,10 +142,19 @@ public class NativeMenuAction(
 @Immutable
 public class NativeBarContent internal constructor(
     public val title: String?,
-    public val leading: List<NativeBarButton>,
+    public val leadingComponents: List<NativeBarComponent>,
     public val trailing: List<NativeBarButton>,
     public val toolbar: List<NativeBarButton>,
-)
+) {
+    public val leading: List<NativeBarButton> get() = leadingComponents.filterIsInstance<NativeBarButton>()
+
+    init {
+        val textItems = leadingComponents.filterIsInstance<NativeBarText>()
+        require(textItems.distinctBy(NativeBarText::key).size == textItems.size) {
+            "내비게이션 바 텍스트의 키는 중복될 수 없습니다."
+        }
+    }
+}
 
 /**
  * Declares the screen's bar items from inside its composable content, so they can follow the
@@ -133,7 +180,7 @@ public class NativeBarContent internal constructor(
 @Composable
 public fun NativeBarItems(
     title: String? = null,
-    leading: List<NativeBarButton> = emptyList(),
+    leading: List<NativeBarComponent> = emptyList(),
     trailing: List<NativeBarButton> = emptyList(),
     toolbar: List<NativeBarButton> = emptyList(),
 ) {
@@ -145,6 +192,43 @@ public fun NativeBarItems(
         onDispose { state.unregister(owner) }
     }
 }
+
+/**
+ * 현재 화면의 네이티브 내비게이션 바 부제목을 선언합니다.
+ * 제목과 버튼은 [NativeBarItems]로 별도 선언할 수 있습니다.
+ * iOS 26 이상에서는 부제목을, 이전 버전에서는 프롬프트를 사용합니다.
+ *
+ * @param text 표시할 부제목. null이면 부제목을 지웁니다.
+ */
+@Composable
+public fun NativeBarSubtitle(text: String?) {
+    val state = LocalNativeBarState.current ?: return
+    val owner = remember { Any() }
+    SideEffect { state.registerSubtitle(owner, text) }
+    DisposableEffect(state, owner) {
+        onDispose { state.unregisterSubtitle(owner) }
+    }
+}
+
+/**
+ * 네이티브 내비게이션 바 왼쪽에 읽기 전용 라벨을 표시합니다.
+ * [text]가 null이면 라벨을 숨기며, 표시 중 텍스트 갱신은 버튼과 독립적으로 처리합니다.
+ *
+ * @param width 라벨에 확보할 너비(포인트)
+ * @param accessibilityLabel 화면 읽기 기능에 제공할 문구. null이면 [text]를 읽습니다.
+ */
+@Composable
+public fun NativeBarLeadingLabel(text: String?, width: Float, accessibilityLabel: String? = null) {
+    val state = LocalNativeBarState.current ?: return
+    val owner = remember { Any() }
+    val label = text?.let { NativeLeadingLabel(it, width, accessibilityLabel) }
+    SideEffect { state.registerLeadingLabel(owner, label) }
+    DisposableEffect(state, owner) {
+        onDispose { state.unregisterLeadingLabel(owner) }
+    }
+}
+
+internal data class NativeLeadingLabel(val text: String, val width: Float, val accessibilityLabel: String?)
 
 /** A search field declared with [NativeSearchBar]. */
 @Immutable
@@ -195,6 +279,35 @@ public class NativeBarState {
     public val trailing: List<NativeBarButton> get() = current?.trailing.orEmpty()
     public val toolbar: List<NativeBarButton> get() = current?.toolbar.orEmpty()
 
+    private val subtitles = mutableStateListOf<Pair<Any, String?>>()
+    internal var subtitleListener: ((String?) -> Unit)? = null
+    public val subtitle: String? get() = subtitles.lastOrNull()?.second
+
+    internal fun registerSubtitle(owner: Any, text: String?) {
+        val index = subtitles.indexOfFirst { it.first === owner }
+        if (index >= 0) subtitles[index] = owner to text else subtitles.add(owner to text)
+        subtitleListener?.invoke(subtitle)
+    }
+
+    internal fun unregisterSubtitle(owner: Any) {
+        subtitles.removeAll { it.first === owner }
+        subtitleListener?.invoke(subtitle)
+    }
+
+    private val leadingLabels = mutableStateListOf<Pair<Any, NativeLeadingLabel?>>()
+    internal var leadingLabelListener: ((NativeLeadingLabel?) -> Unit)? = null
+
+    internal fun registerLeadingLabel(owner: Any, label: NativeLeadingLabel?) {
+        val index = leadingLabels.indexOfFirst { it.first === owner }
+        if (index >= 0) leadingLabels[index] = owner to label else leadingLabels.add(owner to label)
+        leadingLabelListener?.invoke(leadingLabels.lastOrNull()?.second)
+    }
+
+    internal fun unregisterLeadingLabel(owner: Any) {
+        leadingLabels.removeAll { it.first === owner }
+        leadingLabelListener?.invoke(leadingLabels.lastOrNull()?.second)
+    }
+
     private val searches = mutableStateListOf<Pair<Any, NativeSearch>>()
 
     /** Called synchronously when the search field changes (used by the iOS screen host). */
@@ -236,10 +349,14 @@ internal val LocalNativeBarState = staticCompositionLocalOf<NativeBarState?> { n
 
 /** What a native bar looks like, without the click handlers: equal shapes reuse native items. */
 internal data class BarShape(
-    val leading: List<ButtonShape>,
+    val leading: List<ComponentShape>,
     val trailing: List<ButtonShape>,
     val toolbar: List<ButtonShape>,
 ) {
+    sealed interface ComponentShape
+
+    data class TextShape(val key: String) : ComponentShape
+
     data class ButtonShape(
         val title: String,
         val systemImage: String?,
@@ -247,8 +364,9 @@ internal data class BarShape(
         val image: Painter?,
         val badge: Int,
         val isPrimary: Boolean,
+        val tintColor: Color,
         val menu: List<MenuShape>,
-    )
+    ) : ComponentShape
 
     data class MenuShape(
         val title: String,
@@ -266,16 +384,22 @@ internal data class BarShape(
 
 internal fun NativeBarContent?.shape(): BarShape {
     if (this == null) return BarShape.Empty
-    fun List<NativeBarButton>.shapes() = map { button ->
+    fun NativeBarButton.shape() =
         BarShape.ButtonShape(
-            title = button.title,
-            systemImage = button.systemImage,
-            enabled = button.enabled,
-            image = button.image,
-            badge = button.badge,
-            isPrimary = button.isPrimary,
-            menu = button.menu.map { BarShape.MenuShape(it.title, it.systemImage, it.destructive, it.image, it.enabled, it.badge) },
+            title = title,
+            systemImage = systemImage,
+            enabled = enabled,
+            image = image,
+            badge = badge,
+            isPrimary = isPrimary,
+            tintColor = tintColor,
+            menu = menu.map { BarShape.MenuShape(it.title, it.systemImage, it.destructive, it.image, it.enabled, it.badge) },
         )
+    val leadingShapes = leadingComponents.map { item ->
+        when (item) {
+            is NativeBarButton -> item.shape()
+            is NativeBarText -> BarShape.TextShape(item.key)
+        }
     }
-    return BarShape(leading.shapes(), trailing.shapes(), toolbar.shapes())
+    return BarShape(leadingShapes, trailing.map { it.shape() }, toolbar.map { it.shape() })
 }

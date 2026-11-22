@@ -35,4 +35,28 @@ final class NavigationUITests: ExampleAppTestCase {
         tapBack()
         expectText("Open detail", "설정 루트")
     }
+
+    func testDetailBarAndFloatingAction() {
+        launch()
+        tap("Row 3")
+        let favorite = app.navigationBars.buttons["즐겨찾기 전환"]
+        XCTAssertTrue(favorite.waitForExistence(timeout: 5))
+        XCTAssertTrue(favorite.isEnabled)
+        favorite.tap()
+        expectText("즐겨찾기에 추가됨", "전환 후 바 버튼 실행")
+        tap("메모 추가")
+        expectText("메모 수 1개", "네이티브 FAB 실행")
+        expectText("메모 1개", "네이티브 바 라벨 갱신")
+    }
+
+    func testPreviewHidesAndRestoresNavigationBar() {
+        launch()
+        app.tabBars.buttons["Settings"].tap()
+        tap("미리보기 열기")
+        expectText("항목 42 미리보기", "미리보기 화면")
+        let bar = app.navigationBars["미리보기"]
+        XCTAssertFalse(bar.exists && bar.isHittable)
+        tap("미리보기 닫기")
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+    }
 }

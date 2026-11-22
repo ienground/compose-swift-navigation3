@@ -15,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.DisposableEffect
@@ -208,6 +209,30 @@ public fun Modifier.nativeScrollExclusion(): Modifier = composed {
     }
 }
 
+/**
+ * 현재 네이티브 스크롤 호스트에 당겨서 새로고침을 연결합니다.
+ *
+ * @param isRefreshing 데이터 갱신이 진행 중인지 여부. false가 되면 인디케이터를 닫습니다.
+ * @param onRefresh 사용자가 당겨서 새로고침을 시작할 때 실행할 콜백
+ * @return 호스트가 있으면 true. 그 외에는 호출자가 대체 UI를 표시할 수 있습니다.
+ */
+@Composable
+public fun NativePullToRefresh(isRefreshing: Boolean, onRefresh: () -> Unit): Boolean {
+    val host = LocalNativeScrollHost.current ?: return false
+    val owner = remember(host) { Any() }
+    val currentOnRefresh by rememberUpdatedState(onRefresh)
+    val refreshing by rememberUpdatedState(isRefreshing)
+
+    DisposableEffect(host, owner) {
+        host.attachRefresh(owner) { if (!refreshing) currentOnRefresh() }
+        onDispose { host.detachRefresh(owner) }
+    }
+    LaunchedEffect(host, owner, isRefreshing) {
+        if (!isRefreshing) host.endRefresh(owner)
+    }
+    return true
+}
+
 /** Implemented by the platform screen host (the iOS scroll proxy). */
 internal interface NativeScrollHost {
     /** Live padding (reads snapshot state at layout time, so changes only re-layout). */
@@ -223,6 +248,10 @@ internal interface NativeScrollHost {
 
     /** Area (in dp, relative to the screen's Compose root) where the native scroll must not start; null removes it. */
     fun setExclusion(owner: Any, area: Rect?)
+
+    fun attachRefresh(owner: Any, onRefresh: () -> Unit)
+    fun endRefresh(owner: Any)
+    fun detachRefresh(owner: Any)
 }
 
 internal interface NativeScrollAttachment {

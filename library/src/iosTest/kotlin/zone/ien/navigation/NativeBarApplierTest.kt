@@ -8,9 +8,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
+import platform.Foundation.NSProcessInfo
 import platform.UIKit.UIBarButtonItem
 import platform.UIKit.UIAction
 import platform.UIKit.UIImageRenderingMode
+import platform.UIKit.UILabel
 import platform.UIKit.navigationItem
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -28,6 +30,92 @@ import platform.UIKit.UIViewController
 
 @OptIn(ExperimentalNativeApi::class, NativeRuntimeApi::class, BetaInteropApi::class, ExperimentalForeignApi::class)
 class NativeBarApplierTest {
+    @Test
+    fun mixedLeadingItemsReuseTextByKeyAndKeepButtonsOnTextUpdates() {
+        val controller = UIViewController()
+        val applier = NativeBarApplier(controller)
+        val button = NativeBarButton("일시정지")
+        val name = NativeBarText("name", "식사", 40f)
+        val elapsed = NativeBarText("elapsed", "00:09", 68f, "식사 시간 00:09")
+
+        fun apply(vararg components: NativeBarComponent): List<*> {
+            applier.apply(NativeBarContent(null, components.toList(), emptyList(), emptyList()))
+            return controller.navigationItem.leftBarButtonItems.orEmpty()
+        }
+
+        val original = apply(name, button, elapsed)
+        assertEquals(3, original.size)
+        val labelItem = original[2] as UIBarButtonItem
+        val label = assertNotNull(labelItem.customView as? UILabel)
+        val next = elapsed.copy(text = "00:10", accessibilityLabel = "식사 시간 00:10")
+
+        assertEquals(original, apply(name, button, next))
+        assertEquals("00:10", label.text)
+        assertEquals("식사 시간 00:10", label.accessibilityLabel)
+        assertEquals(listOf(original[2], original[1], original[0]), apply(next, button, name))
+        val remaining = apply(button).single() as UIBarButtonItem
+        assertEquals("일시정지", remaining.accessibilityLabel)
+    }
+
+    @Test
+    fun leadingLabelUpdatesWithoutReplacingBarItems() {
+        val controller = UIViewController()
+        val applier = NativeBarApplier(controller)
+        val state = NativeBarState()
+        state.listener = applier::apply
+        state.leadingLabelListener = applier::applyLeadingLabel
+        state.register(Any(), NativeBarContent(null, listOf(NativeBarButton("일시정지")), emptyList(), emptyList()))
+        val button = assertNotNull(controller.navigationItem.leftBarButtonItems?.singleOrNull())
+        val labelOwner = Any()
+
+        state.registerLeadingLabel(labelOwner, NativeLeadingLabel("00:09", 68f, "경과 시간 00:09"))
+        val labelItem = controller.navigationItem.leftBarButtonItems!!.first() as UIBarButtonItem
+        val label = assertNotNull(labelItem.customView as? UILabel)
+        assertEquals("00:09", label.text)
+        assertEquals(button, controller.navigationItem.leftBarButtonItems?.lastOrNull())
+
+        state.registerLeadingLabel(labelOwner, NativeLeadingLabel("00:10", 68f, "경과 시간 00:10"))
+        assertEquals("00:10", label.text)
+        assertEquals("경과 시간 00:10", label.accessibilityLabel)
+        assertEquals(listOf(labelItem, button), controller.navigationItem.leftBarButtonItems)
+
+        state.unregisterLeadingLabel(labelOwner)
+        assertEquals(button, controller.navigationItem.leftBarButtonItems?.singleOrNull())
+    }
+
+    @Test
+    fun subtitleChangesAndClearsIndependentlyOfBarItems() {
+        val controller = UIViewController()
+        val item = controller.navigationItem
+        val applier = NativeBarApplier(controller)
+        val state = NativeBarState()
+        state.listener = applier::apply
+        state.subtitleListener = applier::applySubtitle
+        val hasSubtitle = NSProcessInfo.processInfo.operatingSystemVersion.useContents { majorVersion >= 26 }
+        fun displayedSubtitle() = if (hasSubtitle) item.subtitle else item.prompt
+
+        val barOwner = Any()
+        val subtitleOwner = Any()
+        val nextSubtitleOwner = Any()
+        state.register(barOwner, NativeBarContent("채팅", emptyList(), listOf(NativeBarButton("신고")), emptyList()))
+        val action = item.rightBarButtonItems?.singleOrNull()
+        assertNotNull(action)
+
+        state.registerSubtitle(subtitleOwner, "운영자")
+        assertEquals("운영자", displayedSubtitle())
+        state.registerSubtitle(nextSubtitleOwner, "매칭방")
+        assertEquals("매칭방", displayedSubtitle())
+        state.unregisterSubtitle(nextSubtitleOwner)
+        assertEquals("운영자", displayedSubtitle())
+        state.registerSubtitle(subtitleOwner, null)
+        assertNull(displayedSubtitle())
+        state.registerSubtitle(subtitleOwner, "운영자")
+        state.unregisterSubtitle(subtitleOwner)
+        assertNull(displayedSubtitle())
+        assertEquals("채팅", item.title)
+        assertEquals(action, item.rightBarButtonItems?.singleOrNull())
+    }
+
     private fun controller(content: NativeBarContent): WeakReference<UIViewController> = autoreleasepool {
         val controller = UIViewController()
         NativeBarApplier(controller).apply(content)
@@ -203,6 +291,22 @@ class NativeBarApplierTest {
             window.hidden = true
             window.rootViewController = null
         }
+    }
+
+    @Test
+    fun `버튼 색을 변경하고 지정하지 않으면 시스템 색으로 되돌린다`() {
+        val controller = UIViewController()
+        val applier = NativeBarApplier(controller)
+
+        fun apply(tint: Color): UIBarButtonItem {
+            val button = NativeBarButton("즐겨찾기", systemImage = "star", tintColor = tint)
+            applier.apply(NativeBarContent(null, emptyList(), listOf(button), emptyList()))
+            return controller.navigationItem.rightBarButtonItems!!.single() as UIBarButtonItem
+        }
+
+        assertEquals(Color.Yellow.toUIColor(), apply(Color.Yellow).tintColor)
+        assertEquals(Color.Blue.toUIColor(), apply(Color.Blue).tintColor)
+        assertNull(apply(Color.Unspecified).tintColor)
     }
 
     @Test

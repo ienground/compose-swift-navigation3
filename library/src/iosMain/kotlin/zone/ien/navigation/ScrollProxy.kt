@@ -18,7 +18,10 @@ import platform.CoreGraphics.CGPointMake
 import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGRectZero
 import platform.CoreGraphics.CGSizeMake
+import platform.UIKit.UIAction
 import platform.UIKit.UIColor
+import platform.UIKit.UIControlEventValueChanged
+import platform.UIKit.UIRefreshControl
 import platform.UIKit.UIGestureRecognizer
 import platform.UIKit.UIPanGestureRecognizer
 import platform.UIKit.UIScrollView
@@ -39,7 +42,7 @@ import kotlin.math.abs
  * See AGENTS.md 6.5.
  */
 @OptIn(ExperimentalForeignApi::class)
-internal class ScrollProxy : NativeScrollHost {
+internal class ScrollProxy(private val screenBottomInset: (Double) -> Double = { it }) : NativeScrollHost {
 
     /** Areas (dp == pt, in the Compose view's coordinates) where the pan must not start. */
     private val exclusions = mutableMapOf<Any, Rect>()
@@ -53,6 +56,41 @@ internal class ScrollProxy : NativeScrollHost {
         backgroundColor = UIColor.systemBackgroundColor
         contentInsetAdjustmentBehavior =
             UIScrollViewContentInsetAdjustmentBehavior.UIScrollViewContentInsetAdjustmentAlways
+    }
+
+    private val refreshActions = linkedMapOf<Any, () -> Unit>()
+    private var previousRefreshControl: UIRefreshControl? = null
+    private val refreshControl by lazy {
+        val actions = refreshActions
+        UIRefreshControl().apply {
+            addAction(
+                UIAction.actionWithTitle("", image = null, identifier = null) {
+                    actions.values.lastOrNull()?.invoke()
+                },
+                forControlEvents = UIControlEventValueChanged,
+            )
+        }
+    }
+
+    override fun attachRefresh(owner: Any, onRefresh: () -> Unit) {
+        if (refreshActions.isEmpty()) {
+            previousRefreshControl = scrollView.refreshControl
+            scrollView.refreshControl = refreshControl
+        }
+        refreshActions[owner] = onRefresh
+    }
+
+    override fun endRefresh(owner: Any) {
+        if (refreshActions.keys.lastOrNull() == owner) refreshControl.endRefreshing()
+    }
+
+    override fun detachRefresh(owner: Any) {
+        val wasActive = refreshActions.keys.lastOrNull() == owner
+        if (refreshActions.remove(owner) == null) return
+        if (wasActive) refreshControl.endRefreshing()
+        if (refreshActions.isNotEmpty()) return
+        if (scrollView.refreshControl == refreshControl) scrollView.refreshControl = previousRefreshControl
+        previousRefreshControl = null
     }
 
     /** The Compose view, kept on the viewport. */
@@ -70,7 +108,7 @@ internal class ScrollProxy : NativeScrollHost {
         override fun calculateLeftPadding(layoutDirection: LayoutDirection): Dp = insetLeft.dp
         override fun calculateTopPadding(): Dp = insetTop.dp
         override fun calculateRightPadding(layoutDirection: LayoutDirection): Dp = insetRight.dp
-        override fun calculateBottomPadding(): Dp = insetBottom.dp
+        override fun calculateBottomPadding(): Dp = screenBottomInset(insetBottom).dp
     }
 
     private val sync = ScrollSync()
