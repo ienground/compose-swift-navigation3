@@ -1,14 +1,19 @@
+@file:Suppress("DEPRECATION")
+
 package zone.ien.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.LocalSystemTheme
+import androidx.compose.ui.SystemTheme
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalPlatformWindowInsets
 import androidx.compose.ui.platform.PlatformInsets
@@ -22,6 +27,8 @@ import kotlinx.cinterop.useContents
 import platform.UIKit.NSDirectionalRectEdgeAll
 import platform.UIKit.UINavigationItemLargeTitleDisplayMode
 import platform.UIKit.UITransitionContextToViewControllerKey
+import platform.UIKit.UIUserInterfaceIdiomPad
+import platform.UIKit.UIUserInterfaceSizeClassRegular
 import platform.UIKit.UIViewController
 import platform.UIKit.addChildViewController
 import platform.UIKit.didMoveToParentViewController
@@ -114,15 +121,41 @@ internal class ComposeScreenController(
         updateBottomInset()
         val hidden = tabBarHiddenForScreen(controllers)
         if (tabs.tabBarHidden == hidden) return
+        val traits = tabs.traitCollection
+        val usesTopTabBar = traits.userInterfaceIdiom == UIUserInterfaceIdiomPad &&
+            traits.horizontalSizeClass == UIUserInterfaceSizeClassRegular
+        if (tabBarTransitionPending && (animated || usesTopTabBar)) return
         val transition = navigation.transitionCoordinator
-        if (animated && transition != null) {
-            if (tabBarTransitionPending) return
+        if ((animated || usesTopTabBar) && transition != null) {
             val destination = transition.viewControllerForKey(UITransitionContextToViewControllerKey)
             if (destination != null && destination != this) return
 
+            tabBarTransitionPending = true
+            if (usesTopTabBar) {
+                val queued = transition.animateAlongsideTransition(
+                    animation = if (hidden) {
+                        { _ -> tabs.setTabBarHidden(true, animated = true) }
+                    } else {
+                        null
+                    },
+                    completion = { context ->
+                        tabBarTransitionPending = false
+                        val cancelled = context?.isCancelled() == true
+                        if (tabs.selectedViewController == navigation && (cancelled || navigation.topViewController == this)) {
+                            val finalHidden = if (cancelled) !hidden else hidden
+                            if (tabs.tabBarHidden != finalHidden) {
+                                tabs.setTabBarHidden(finalHidden, animated = !cancelled)
+                            }
+                        }
+                    },
+                )
+                if (queued) return
+                tabBarTransitionPending = false
+                tabs.setTabBarHidden(hidden, animated = true)
+                return
+            }
             val tabBar = tabs.tabBar
             val visibleAlpha = tabBar.alpha.takeIf { it > 0.0 } ?: 1.0
-            tabBarTransitionPending = true
             if (!hidden) {
                 // UIKit에 표시하되 투명하게 시작해 스와이프 진행률에 맞춰 드러낸다.
                 tabBar.alpha = 0.0
@@ -146,7 +179,7 @@ internal class ComposeScreenController(
             tabBarTransitionPending = false
             tabBar.alpha = visibleAlpha
         }
-        if (tabs.tabBarHidden != hidden) tabs.setTabBarHidden(hidden, animated && !hidden)
+        if (tabs.tabBarHidden != hidden) tabs.setTabBarHidden(hidden, animated && (usesTopTabBar || !hidden))
     }
 
     private var tabBarTransitionPending = false
@@ -261,11 +294,24 @@ internal class EntryScreen(
     entry: NavEntry<*>,
     leases: ContentLeases,
     private val titleImages: TitleImages = TitleImages(),
+    systemTheme: State<SystemTheme>? = null,
 ) {
 
     private val state = EntryScreenState(entry, leases)
 
-    val controller = ComposeScreenController(content = { state.Content() }, onWillAppear = state::appear)
+    @OptIn(InternalComposeUiApi::class)
+    val controller = ComposeScreenController(
+        content = {
+            if (systemTheme == null) {
+                state.Content()
+            } else {
+                CompositionLocalProvider(LocalSystemTheme provides systemTheme.value) {
+                    state.Content()
+                }
+            }
+        },
+        onWillAppear = state::appear,
+    )
 
     val contentKey: Any get() = state.contentKey
 

@@ -1,5 +1,6 @@
 package zone.ien.navigation
 
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.unit.Density
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -461,6 +462,7 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         }
         item.style = if (shape.isPrimary) UIBarButtonItemStyleDone else UIBarButtonItemStylePlain
         item.enabled = shape.enabled
+        if (shape.tintColor != Color.Unspecified) item.tintColor = shape.tintColor.toUIColor()
         item.accessibilityLabel = shape.title
         if (shape.badge != 0) {
             item.customView = badgedButton(shape, image, item, current)
@@ -476,6 +478,7 @@ internal class NativeBarApplier(private val controller: UIViewController) {
         current: () -> NativeBarButton?,
     ): UIView {
         val button = UIButton.buttonWithType(UIButtonTypeSystem)
+        item.tintColor?.let { button.tintColor = it }
         if (image != null) button.setImage(image, forState = UIControlStateNormal)
         else button.setTitle(shape.title, forState = UIControlStateNormal)
         if (item.menu != null) {

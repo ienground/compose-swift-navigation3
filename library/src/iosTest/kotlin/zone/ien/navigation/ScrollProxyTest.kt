@@ -18,12 +18,35 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
 import platform.CoreGraphics.CGPointMake
 import platform.CoreGraphics.CGRectMake
+import platform.UIKit.UIControlEventValueChanged
 import platform.UIKit.UIView
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 @OptIn(ExperimentalForeignApi::class)
 class ScrollProxyTest {
+    @Test
+    fun refreshControlIsRemovedWhenTheLastOwnerDetaches() {
+        val proxy = ScrollProxy()
+        val first = Any()
+        val second = Any()
+        var calls = 0
+        proxy.attachRefresh(first) { calls++ }
+        val control = assertNotNull(proxy.scrollView.refreshControl)
+        proxy.attachRefresh(second) { calls += 10 }
+        control.sendActionsForControlEvents(UIControlEventValueChanged)
+        assertEquals(10, calls)
+        proxy.detachRefresh(second)
+        control.sendActionsForControlEvents(UIControlEventValueChanged)
+        assertEquals(11, calls)
+        proxy.detachRefresh(first)
+        assertNull(proxy.scrollView.refreshControl)
+        control.sendActionsForControlEvents(UIControlEventValueChanged)
+        assertEquals(11, calls)
+    }
+
     @Test
     fun overscrollKeepsScreenAndFixedBarsInViewport() {
         val proxy = ScrollProxy()

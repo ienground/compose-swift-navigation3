@@ -18,7 +18,10 @@ import platform.CoreGraphics.CGPointMake
 import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGRectZero
 import platform.CoreGraphics.CGSizeMake
+import platform.UIKit.UIAction
 import platform.UIKit.UIColor
+import platform.UIKit.UIControlEventValueChanged
+import platform.UIKit.UIRefreshControl
 import platform.UIKit.UIGestureRecognizer
 import platform.UIKit.UIPanGestureRecognizer
 import platform.UIKit.UIScrollView
@@ -53,6 +56,39 @@ internal class ScrollProxy(private val screenBottomInset: (Double) -> Double = {
         backgroundColor = UIColor.systemBackgroundColor
         contentInsetAdjustmentBehavior =
             UIScrollViewContentInsetAdjustmentBehavior.UIScrollViewContentInsetAdjustmentAlways
+    }
+
+    private val refreshActions = linkedMapOf<Any, () -> Unit>()
+    private var previousRefreshControl: UIRefreshControl? = null
+    private val refreshControl by lazy {
+        val actions = refreshActions
+        UIRefreshControl().apply {
+            addAction(
+                UIAction.actionWithTitle("", image = null, identifier = null) {
+                    actions.values.lastOrNull()?.invoke()
+                },
+                forControlEvents = UIControlEventValueChanged,
+            )
+        }
+    }
+
+    override fun attachRefresh(owner: Any, onRefresh: () -> Unit) {
+        if (refreshActions.isEmpty()) {
+            previousRefreshControl = scrollView.refreshControl
+            scrollView.refreshControl = refreshControl
+        }
+        refreshActions[owner] = onRefresh
+    }
+
+    override fun endRefresh(owner: Any) {
+        if (refreshActions.keys.lastOrNull() == owner) refreshControl.endRefreshing()
+    }
+
+    override fun detachRefresh(owner: Any) {
+        if (refreshActions.remove(owner) == null || refreshActions.isNotEmpty()) return
+        refreshControl.endRefreshing()
+        if (scrollView.refreshControl == refreshControl) scrollView.refreshControl = previousRefreshControl
+        previousRefreshControl = null
     }
 
     /** The Compose view, kept on the viewport. */

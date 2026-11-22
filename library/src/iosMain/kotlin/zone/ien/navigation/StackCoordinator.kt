@@ -1,4 +1,9 @@
+@file:Suppress("DEPRECATION")
+
 package zone.ien.navigation
+
+import androidx.compose.runtime.State
+import androidx.compose.ui.SystemTheme
 
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.navigation3.runtime.NavEntry
@@ -29,6 +34,7 @@ internal class StackCoordinator(
     private val leases: ContentLeases,
     private val titleImages: TitleImages = TitleImages(),
     private val isTransitioning: () -> Boolean = { navigationController.transitionCoordinator != null },
+    private val systemTheme: State<SystemTheme>? = null,
 ) {
     private var screens: List<EntryScreen> = emptyList()
     private var target: List<NavEntry<*>> = emptyList()
@@ -121,7 +127,7 @@ internal class StackCoordinator(
         val kept = screens.take(update.keep)
         val removed = screens.drop(update.keep)
         val created = target.drop(update.keep).mapIndexed { offset, entry ->
-            EntryScreen(entry, leases, titleImages).apply {
+            EntryScreen(entry, leases, titleImages, systemTheme).apply {
                 shared = update.keep + offset >= sharedFrom
                 controller.hidesNavigationBar = entry.nativeHidesNavigationBar ?: defaultBarHidden
             }

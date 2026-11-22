@@ -294,6 +294,22 @@ class NativeBarApplierTest {
     }
 
     @Test
+    fun `버튼 색을 변경하고 지정하지 않으면 시스템 색으로 되돌린다`() {
+        val controller = UIViewController()
+        val applier = NativeBarApplier(controller)
+
+        fun apply(tint: Color): UIBarButtonItem {
+            val button = NativeBarButton("즐겨찾기", systemImage = "star", tintColor = tint)
+            applier.apply(NativeBarContent(null, emptyList(), listOf(button), emptyList()))
+            return controller.navigationItem.rightBarButtonItems!!.single() as UIBarButtonItem
+        }
+
+        assertEquals(Color.Yellow.toUIColor(), apply(Color.Yellow).tintColor)
+        assertEquals(Color.Blue.toUIColor(), apply(Color.Blue).tintColor)
+        assertNull(apply(Color.Unspecified).tintColor)
+    }
+
+    @Test
     fun `주요 액션은 네이티브 강조 스타일로 구분하고 변경을 반영한다`() {
         val controller = UIViewController()
         val applier = NativeBarApplier(controller)
