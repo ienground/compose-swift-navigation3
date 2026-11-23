@@ -7,8 +7,6 @@ iOS에서는 Kotlin 백스택을 실제 `UITabBarController`와 `UINavigationCon
 
 라우트, 백스택, 엔트리 제공자, 화면, ViewModel, 루트 `App()`은 공통 코드에 둡니다. 라이브러리는 Kotlin으로 구현되어 별도의 Swift 내비게이션 계층이 필요 없습니다.
 
-> 이 문서는 현재 소스 버전 `1.0.0-alpha02-dev10`를 기준으로 합니다. Maven Central에서 확인한 공개 버전은 `1.0.0-alpha01`이며, 아래 배지·메뉴 활성 상태·주요 액션·내비게이션 강조색 등 최신 API는 현재 소스를 로컬 Maven으로 배포하거나 프로젝트 의존성으로 연결해 사용하세요.
-
 <a id="toc"></a>
 
 ## 목차
@@ -51,20 +49,13 @@ iOS에서는 Kotlin 백스택을 실제 `UITabBarController`와 `UINavigationCon
 
 ## 설치
 
-저장소 루트에서 현재 소스를 로컬 Maven 저장소에 배포합니다.
-
-```bash
-./gradlew :library:publishToMavenLocal
-```
-
-사용하는 앱의 의존성 저장소에 `mavenCentral()`보다 앞서 `mavenLocal()`을 추가하고 `google()`은 유지합니다. 공유 모듈에는 다음 의존성을 추가합니다.
+기존 Compose Multiplatform 앱의 공유 모듈 `commonMain`에 의존성을 추가합니다. iOS 배포 대상은 18.2 이상으로 설정합니다.
 
 ```kotlin
 // settings.gradle.kts
 dependencyResolutionManagement {
     repositories {
         google()
-        mavenLocal()
         mavenCentral()
     }
 }
@@ -75,30 +66,22 @@ dependencyResolutionManagement {
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("zone.ien.navigation:navigation:1.0.0-alpha02-dev10")
+            implementation("zone.ien.navigation:navigation:1.0.0-alpha04")
+            implementation("org.jetbrains.androidx.navigation3:navigation3-ui:1.2.0")
         }
     }
 }
 ```
 
-또는 [예제 모듈](example/shared/build.gradle.kts)처럼 기존 `library` 모듈을 빌드에 포함하고 프로젝트 의존성으로 사용합니다.
+라이브러리는 `androidx.navigation3:navigation3-runtime:1.2.1`을 전이 의존성으로 제공합니다. 예제의 `navigation3-ui`는 iOS 외 플랫폼에서 `NavDisplay`를 그릴 때 사용합니다. 아래 예제를 실행하려면 앱의 Kotlin 버전과 같은 serialization 플러그인을 적용하고 Compose Material 3를 추가합니다. 엔트리별 ViewModel을 쓴다면 `org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3:2.11.0`도 추가합니다. [프로젝트 버전 카탈로그](gradle/libs.versions.toml) · [Maven Central 버전 목록](https://repo.maven.apache.org/maven2/zone/ien/navigation/navigation/maven-metadata.xml)
 
-Maven Central 공개 버전을 사용하려면 `mavenLocal()` 없이 `google()`과 `mavenCentral()`을 두고 버전을 `1.0.0-alpha01`로 지정합니다. 공개 버전 목록은 [Maven 메타데이터](https://repo.maven.apache.org/maven2/zone/ien/navigation/navigation/maven-metadata.xml)에서 확인할 수 있습니다. 현재 소스의 최신 API가 그 버전에 모두 포함된 것은 아닙니다.
+수정 중인 소스로 검증하려면 저장소 루트에서 `./gradlew :library:publishToMavenLocal`을 실행하고, 앱의 저장소 목록에서 `mavenCentral()` 앞에 `mavenLocal()`을 둡니다. 같은 빌드에 라이브러리 모듈이 있다면 프로젝트 의존성으로 연결할 수 있습니다. [예제의 의존성 설정](example/shared/build.gradle.kts)
 
 ### 자동 배포
 
-[배포 워크플로](.github/workflows/publish.yml)는 GitHub Release 또는 프리릴리스를 공개할 때 실행됩니다. `gradle/libs.versions.toml`의 `lib-version-name`과 태그가 일치해야 합니다(현재 소스 기준: `v1.0.0-alpha02-dev10`). 같은 릴리스 커밋의 CI 전체가 통과하면 모든 라이브러리 타깃을 서명하고 Maven Central에 업로드한 뒤 자동 공개합니다.
+[배포 워크플로](.github/workflows/publish.yml)는 GitHub Release 또는 프리릴리스를 공개할 때 실행됩니다. `gradle/libs.versions.toml`의 `lib-version-name`과 태그가 일치해야 합니다(현재 소스 기준: `v1.0.0-alpha04`). 같은 릴리스 커밋의 CI 전체가 통과하면 모든 라이브러리 타깃을 서명하고 Maven Central에 업로드한 뒤 자동 공개합니다.
 
 저장소의 Actions Secrets에 compose-hig와 같은 `SONATYPE_USERNAME`, `SONATYPE_PASSWORD`(Central Portal 토큰), `GPG_KEY`(ASCII 형식의 비밀키), `GPG_PASSWORD`(키 암호)를 등록해야 합니다. Central Portal 계정에는 `zone.ien.navigation` 배포 권한이 있어야 하며, 서명 공개키도 키 서버에 등록되어 있어야 합니다. 워크플로는 Secret 값을 출력하지 않습니다.
-
-앱에는 다음 설정도 필요합니다.
-
-- `@Serializable` 라우트를 위한 Kotlin serialization 플러그인. 앱의 Kotlin 버전과 맞춥니다.
-- iOS 외 플랫폼의 `NavDisplay`를 위한 `org.jetbrains.androidx.navigation3:navigation3-ui:1.2.0`
-- 아래 Material UI를 사용한다면 Compose Material 3
-- 엔트리별 ViewModel이 필요하다면 `org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3:2.11.0`
-
-라이브러리는 `androidx.navigation3:navigation3-runtime:1.2.1`을 전이 의존성으로 공개하며 `navigation3-ui`나 Material 3에는 의존하지 않습니다. 저장소의 툴체인은 [버전 카탈로그](gradle/libs.versions.toml)와 [호환성](#compatibility)을 참고하세요.
 
 <a id="3단계-navdisplay를-nativestack으로-감쌉니다"></a>
 <a id="4단계-ios-진입점을-한-줄로-바꿉니다"></a>
@@ -106,7 +89,7 @@ Maven Central 공개 버전을 사용하려면 `mavenLocal()` 없이 `google()`�
 
 ## 빠른 시작
 
-설치 후 `commonMain`에 다음 최소 스택을 둡니다. import를 포함한 예제이며 serialization 플러그인을 먼저 적용해야 합니다. Android 외 타깃에서도 백스택을 저장할 수 있도록 `NavKey` 하위 타입을 등록합니다.
+탭이 없는 앱은 `NativeStack`을 사용합니다. 공유 모듈의 `commonMain`에 다음 `App.kt`를 둡니다. `SavedStateConfiguration`에 `NavKey` 하위 타입을 등록해 플랫폼 공통으로 백스택을 저장합니다. 앱 테마는 `NativeNavigationFrame.frame`에서 각 화면에 적용합니다.
 
 ```kotlin
 import androidx.compose.foundation.layout.padding
@@ -131,7 +114,6 @@ import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 import zone.ien.navigation.NativeNavigationFrame
 import zone.ien.navigation.NativeStack
-import zone.ien.navigation.NativeScrollContent
 import zone.ien.navigation.nativeContentPadding
 import zone.ien.navigation.nativeScreen
 
@@ -150,9 +132,7 @@ private val navigationConfiguration = SavedStateConfiguration {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App() {
-    NativeNavigationFrame(frame = { content ->
-        MaterialTheme { NativeScrollContent { content() } }
-    }) {
+    NativeNavigationFrame(frame = { content -> MaterialTheme { content() } }) {
         val backStack = rememberNavBackStack(navigationConfiguration, Home)
         val provider = remember(backStack) {
             entryProvider<NavKey> {
@@ -185,7 +165,7 @@ fun App() {
 }
 ```
 
-Android는 `setContent { App() }`, Desktop은 윈도우 안에서 `App()`을 호출합니다. `iosMain`에서는 네이티브 루트를 공개합니다.
+Android는 `setContent { App() }`, Desktop은 윈도우 안에서 `App()`을 호출합니다. iOS는 공유 모듈의 `iosMain/MainViewController.kt`에서 기존 `ComposeUIViewController { App() }`를 다음과 같이 바꿉니다.
 
 ```kotlin
 import platform.UIKit.UIViewController
@@ -194,19 +174,22 @@ import zone.ien.navigation.NativeNavigationViewController
 fun MainViewController(): UIViewController = NativeNavigationViewController { App() }
 ```
 
-SwiftUI에서는 `import SwiftUI`, `import UIKit`, Kotlin 프레임워크 import(예제는 `Shared`)와 함께 아래처럼 붙입니다. 기존 `UIViewControllerRepresentable`이 있다면 그대로 활용합니다.
+SwiftUI 앱은 기존 `UIViewControllerRepresentable`에서 이 컨트롤러를 반환합니다. `Shared`는 예제의 Kotlin 프레임워크 이름입니다. 앱의 프레임워크 `baseName`이 다르면 import를 바꿉니다.
 
 ```swift
+import SwiftUI
+import UIKit
+import Shared
+
 struct ComposeView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIViewController {
         MainViewControllerKt.MainViewController()
     }
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
 }
-// ComposeView().ignoresSafeArea()
 ```
 
-UIKit 앱은 반환값을 `window.rootViewController`에 지정합니다. **Open detail**을 누른 뒤 뒤로가기를 확인합니다. iOS는 시스템 내비게이션 컨트롤러, Android·Desktop은 위 Material 바를 사용합니다. 저장소의 전체 예제를 보려면 루트에서 `example/run-sample.sh ios` 또는 `example/run-sample.sh android`를 실행합니다.
+SwiftUI의 `WindowGroup`에는 `ComposeView().ignoresSafeArea()`를 배치해 UIKit이 화면 여백을 처리하도록 합니다. UIKit 앱은 반환값을 `window.rootViewController`에 지정합니다. **Open detail**을 누른 뒤 뒤로가기를 확인합니다. iOS는 시스템 내비게이션 컨트롤러, Android·Desktop은 위 Material 바를 사용합니다. 저장소의 전체 예제를 보려면 루트에서 `example/run-sample.sh ios` 또는 `example/run-sample.sh android`를 실행합니다.
 
 <a id="도입-체크리스트"></a>
 <a id="반드시-할-일"></a>
@@ -275,7 +258,7 @@ MaterialTheme {
 
 #### 2. 기존 Scaffold를 NativeTabs 블록으로 옮깁니다
 
-아래는 적용 후 `App()`입니다. 필요한 import는 [전체 App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt)를 참고하세요. `HomeScreen`, `SettingsScreen`, `DetailScreen`과 라우트는 예제의 기존 선언을 사용합니다.
+예제의 `App()`은 탭별 백스택과 라우트별 네이티브 메타데이터를 선언합니다. 아래 코드를 실행하려면 예제의 화면 구현과 라우트를 함께 사용합니다. [App.kt 및 import](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt) · [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/Screens.kt)
 
 ```kotlin
 @OptIn(ExperimentalMaterial3Api::class)
@@ -284,35 +267,58 @@ fun App() {
     val home = rememberNavBackStack(navigationConfiguration, HomeRoute)
     val settings = rememberNavBackStack(navigationConfiguration, SettingsRoute)
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var pendingUpdates by rememberSaveable { mutableIntStateOf(0) }
     val stacks = listOf(home, settings)
     val openDetail: (Int) -> Unit = { id -> stacks[selectedTab].add(DetailRoute(id)) }
 
-    // 추가: iOS의 각 화면에도 기존 앱 테마와 스크롤 바운스를 적용한다.
     NativeNavigationFrame(frame = { content ->
-        MaterialTheme { NativeScrollContent { content() } }
+        val colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+        MaterialTheme(colorScheme = colorScheme) {
+            Surface { NativeScrollContent { content() } }
+        }
     }) {
-        // 추가: iOS는 네이티브 탭·스택을 사용하고, 나머지 플랫폼은 아래 Material UI를 사용한다.
         NativeTabs(
             tabs = listOf(
                 NativeTab("Home", "house", home),
-                NativeTab("Settings", "gearshape", settings),
+                NativeTab("Settings", "gearshape", settings, image = null, badgeCount = pendingUpdates),
             ),
             selectedTab = selectedTab,
             onTabSelected = { selectedTab = it },
             entryProvider = entryProvider {
-                // 추가: UIKit이 push 전에 제목을 알 수 있도록 엔트리에 metadata를 선언한다.
                 entry<HomeRoute>(metadata = nativeScreen(title = "Home", largeTitle = true)) {
-                    HomeScreen(onOpenDetail = openDetail)
+                    HomeScreen(onOpenDetail = openDetail, onRefreshCompleted = { pendingUpdates++ })
                 }
                 entry<SettingsRoute>(metadata = nativeScreen(title = "Settings", largeTitle = true)) {
-                    SettingsScreen(onOpenDetail = { openDetail(42) })
+                    SettingsScreen(
+                        pendingUpdates = pendingUpdates,
+                        onClearUpdates = { pendingUpdates = 0 },
+                        onOpenDetail = { openDetail(42) },
+                        onOpenPreview = { settings.add(DetailRoute(id = 42, preview = true)) },
+                    )
                 }
-                entry<DetailRoute>(metadata = { route -> nativeScreen(title = "Detail ${route.id}") }) { route ->
-                    DetailScreen(id = route.id)
+                entry<DetailRoute>(metadata = { route ->
+                    if (route.preview) {
+                        nativeScreen(title = "미리보기", hidesNavigationBar = true)
+                    } else {
+                        nativeScreen(
+                            title = "Detail ${route.id}",
+                            initialTrailing = listOf(
+                                nativeBarTransitionPlaceholder(
+                                    title = favoriteActionTitle,
+                                    systemImage = "star",
+                                ),
+                            ),
+                        )
+                    }
+                }) { route ->
+                    if (route.preview) {
+                        PreviewScreen(id = route.id, onBack = { settings.removeLastOrNull() })
+                    } else {
+                        DetailScreen(id = route.id)
+                    }
                 }
             },
         ) {
-            // 기존 Material 3 + NavDisplay 구성. iOS에서는 이 블록을 실행하지 않는다.
             Scaffold(
                 topBar = {
                     TopAppBar(
@@ -328,7 +334,15 @@ fun App() {
                             NavigationBarItem(
                                 selected = selectedTab == index,
                                 onClick = { onTabSelected(index) },
-                                icon = { Text(text = tab.title) },
+                                icon = {
+                                    BadgedBox(badge = {
+                                        tab.badgeCount?.takeIf { it > 0 }?.let { count ->
+                                            Badge { Text(text = count.toString()) }
+                                        }
+                                    }) {
+                                        Text(text = tab.title)
+                                    }
+                                },
                             )
                         }
                     }
@@ -349,7 +363,7 @@ fun App() {
 
 #### 3. 화면의 스크롤과 여백을 연결합니다
 
-기존 `LazyColumn`의 state를 재사용하고 두 값을 연결합니다. 아래 코드는 `HomeScreen(onOpenDetail)`의 본문이며 import를 포함한 전체 구현은 [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/Screens.kt)에 있습니다.
+기존 `LazyColumn`의 state를 재사용하고 반환된 두 값을 연결합니다. 아래는 스크롤 연결만 보여주는 코드입니다. 당겨서 새로고침과 바 부제목까지 포함한 `HomeScreen`은 [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/Screens.kt)에 있습니다.
 
 ```kotlin
 val state = rememberLazyListState()
@@ -471,7 +485,7 @@ NativeTabs(
 ) { MaterialChrome() }
 ```
 
-이 부분 예제는 빠른 시작에 앱의 `Settings` 라우트, 제공자, `NativeNavigationScope<NavKey>.MaterialChrome()` 렌더러를 더한 것입니다. 현재 최소 예제의 [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt)는 별도 렌더러 함수 없이 블록 안에 Material `Scaffold`와 `NavDisplay`를 직접 둡니다.
+이 부분 예제는 빠른 시작에 앱의 `Settings` 라우트, 제공자, `NativeNavigationScope<NavKey>.MaterialChrome()` 렌더러를 더한 것입니다. 저장소의 예제는 블록 안에 Material `Scaffold`와 `NavDisplay`를 직접 둡니다. [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt)
 
 - iOS에서는 `UITabBarController`와 탭마다 하나의 `UINavigationController`가 됩니다. 다른 플랫폼도 탭별 decorated 엔트리를 유지하므로 저장 가능 상태와 ViewModel이 유지됩니다.
 - `sharedBackStack`은 비어 있어도 됩니다. 공유 화면은 항상 탭 바를 숨기고 선택된 탭 위에 push됩니다. `onSharedBack`은 공유 엔트리 하나를 제거합니다. 공유 화면이 보이는 동안 앱이 `selectedTab`을 바꾸면 애니메이션 없이 새 탭으로 옮겨 갑니다.
@@ -551,6 +565,8 @@ entry<Detail>(metadata = { key -> nativeScreen(title = "Detail ${key.id}", hides
 | --- | --- | --- |
 | `title` | `null` | `navigationItem.title`. 고정 제목은 push 시작 전에 설정 |
 | `largeTitle` | `false` | 스크롤에 따라 접히는 큰 제목. 스택 루트에서만 사용 권장 |
+| `hidesNavigationBar` | 생략 | `true`로 설정하면 네이티브 상단 바를 숨깁니다. 이 옵션을 사용하는 스택에서는 값을 생략한 화면에 바가 표시됩니다. |
+| `initialTrailing` | 생략 | push 시작 시 표시할 오른쪽 버튼입니다. 비활성 자리표시자는 `nativeBarTransitionPlaceholder`로 만듭니다. 전환이 끝나면 `NativeBarItems`의 버튼으로 교체합니다. |
 | `hidesTabBar` | `false` | `UITabBarController`에서 숨김. 그 위로 push한 화면에서도 숨김 유지 |
 | `titleImage` | `null` | `@Composable () -> Painter`를 종횡비를 유지한 높이 28pt `titleView`로 표시 |
 
@@ -616,7 +632,7 @@ Scaffold(bottomBar = { FixedActions() }) { padding ->
 
 ### 바 아이템, 메뉴, 검색
 
-화면 Composable 안에서 `NativeBarItems`를 선언합니다. 아래 `EditorBar`는 화면의 상태와 콜백을 받아 바 버튼·메뉴 항목·툴바를 함께 구성하는 예제입니다. 현재 최소 [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt)에는 바 아이템 데모를 넣지 않았으므로, 필요한 화면 내용에서 이 함수를 호출합니다.
+화면 Composable 안에서 `NativeBarItems`를 선언합니다. 아래 `EditorBar`는 화면의 상태와 콜백을 받아 바 버튼·메뉴 항목·툴바를 함께 구성하는 예제입니다. 실제 예제의 상세 화면에 선언한 바 액션도 확인할 수 있습니다. [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/Screens.kt)
 
 ```kotlin
 import androidx.compose.runtime.Composable
@@ -845,7 +861,7 @@ struct ContentView: View {
 | iOS | 18.2 이상, `iosArm64`·`iosSimulatorArm64`. Liquid Glass는 iOS 26 이상 SDK 빌드 필요 |
 | 기타 라이브러리 타깃 | `jvm`, 브라우저 전용 `js`·`wasmJs` |
 
-CI는 JVM·Android host·iOS 시뮬레이터·JS·Wasm 테스트와 Android·Desktop 예제 빌드를 실행합니다. iOS 앱 빌드와 XCUITest는 실행하지 않습니다. [AGENTS.md](AGENTS.md)에 iOS 18.5·27.2 XCUITest와 Android 수동 검증 기록이 있습니다. 과거 결과이며 현재의 모든 변경을 보증하지 않습니다. 최근 기록된 제목 이미지 검증은 iOS 27.2 UI 테스트 15개 통과이며, 해당 기능은 iOS 18.x에서 재실행하지 않았습니다.
+CI는 JVM·Android host·iOS 시뮬레이터·JS·Wasm 테스트와 Android·Desktop 예제 빌드를 실행합니다. iOS 앱 빌드와 XCUITest는 실행하지 않습니다. [검증 이력](docs/verification.md)에 iOS 18.5·27.2 XCUITest와 Android 수동 검증 기록이 있습니다. 과거 결과이며 현재의 모든 변경을 보증하지 않습니다. 최근 기록된 제목 이미지 검증은 iOS 27.2 UI 테스트 15개 통과이며, 해당 기능은 iOS 18.x에서 재실행하지 않았습니다.
 
 알려진 제약은 다음과 같습니다.
 
@@ -863,7 +879,7 @@ CI는 JVM·Android host·iOS 시뮬레이터·JS·Wasm 테스트와 Android·Des
 
 ## 예제 앱
 
-[예제](example)는 Android·Desktop·iOS가 `App()` 하나를 공유합니다. Home·Settings 두 탭과 상세 화면만 두고, 일반 Material 3 `Scaffold` + Navigation 3 `NavDisplay` 앱에 필요한 연결 코드를 `추가:` 주석으로 표시합니다. 탭별 백스택, 화면 제목, 테마와 스크롤 연결, iOS 진입점을 확인할 수 있습니다. 선택적인 로그인·검색·메뉴·제목 이미지·프로세스 간 상태 복원 데모는 생략합니다.
+[예제](example)는 Android·Desktop·iOS가 `App()` 하나를 공유합니다. Home에서 당겨서 새로고침하면 Settings 탭의 배지가 갱신됩니다. 상세 화면에서는 전환 중 비활성 버튼과 즐겨찾기 액션을, Settings의 미리보기에서는 네이티브 상단 바 숨김을 확인할 수 있습니다.
 
 ```bash
 example/run-sample.sh
@@ -905,7 +921,7 @@ python3 -I example/iosUITests/timeline.py build/ui-tests/<UDID>
 - `example.iosApp` 스킴은 현재 gitignore 대상 `xcuserdata`에 있습니다. 새 클론에서는 위 명령을 쓰기 전에 Xcode에서 스킴을 만들어야 할 수 있습니다.
 - UI 하네스는 예제를 빌드·설치하고 별도 Xcode 프로젝트에서 테스트합니다. 결과·앱 로그·주기적인 캡처는 `build/ui-tests/<UDID>/`에 남습니다.
 - 웹 테스트는 Node.js가 아닌 헤드리스 브라우저에서 실행합니다. 웹 의존성을 바꾸면 `./gradlew kotlinUpgradeYarnLock kotlinWasmUpgradeYarnLock`을 실행합니다.
-- 오래 사용한 시뮬레이터에서 복원 테스트가 `RESTORE none`으로 실패하면 scene 세션 로그를 확인하고 지원 버전의 새 시뮬레이터에서 재검증합니다. 저장소에 시뮬레이터 scene 상태 실패 기록이 있습니다. 검색 테스트도 시뮬레이터 키보드에 따른 실패 기록이 있으므로 [검증 이력](AGENTS.md)을 확인하세요.
+- 오래 사용한 시뮬레이터에서 복원 테스트가 `RESTORE none`으로 실패하면 scene 세션 로그를 확인하고 지원 버전의 새 시뮬레이터에서 재검증합니다. 저장소에 시뮬레이터 scene 상태 실패 기록이 있습니다. 검색 테스트도 시뮬레이터 키보드에 따른 실패 기록이 있으므로 [검증 이력](docs/verification.md)을 확인하세요.
 
 <a id="프로젝트-구조"></a>
 <a id="structure"></a>
@@ -933,7 +949,7 @@ python3 -I example/iosUITests/timeline.py build/ui-tests/<UDID>
 
 ## 기여와 참고 자료
 
-프로젝트 목표, 설계 결정, 기여 지침, 검증 이력은 [AGENTS.md](AGENTS.md)를 참고하세요. 라이브러리 코드는 `library`, 예제·검증 전용 코드는 `example`에 둡니다.
+라이브러리 코드는 `library`, 예제·검증 전용 코드는 `example`에 둡니다. [기여 지침](AGENTS.md) · [아키텍처와 결정 기록](docs/architecture.md) · [빌드와 검증 이력](docs/verification.md)
 
 관련 공식 자료는 다음과 같습니다.
 

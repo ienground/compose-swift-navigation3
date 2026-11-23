@@ -7,8 +7,6 @@ On iOS, the library connects your Kotlin back stacks to real `UITabBarController
 
 Routes, back stacks, entry providers, screens, ViewModels, and the root `App()` stay in common code. The library is implemented in Kotlin; it requires no Swift navigation layer.
 
-> This README describes the current source version, `1.0.0-alpha02-dev10`. The version verified on Maven Central is `1.0.0-alpha01`. For the latest APIs below, including badges, menu enabled state, primary actions, and navigation tint, publish the current source to local Maven or use a project dependency.
-
 <a id="toc"></a>
 
 ## Table of contents
@@ -51,20 +49,13 @@ Kotlin owns the back stack. Native pops call the app's back callback once per re
 
 ## Installation
 
-Run from this repository root to publish the current source to your local Maven repository:
-
-```bash
-./gradlew :library:publishToMavenLocal
-```
-
-In the consuming app, add `mavenLocal()` to its dependency repositories before `mavenCentral()`, keeping `google()`. Add the library to the shared module:
+Add the dependencies to `commonMain` in your existing Compose Multiplatform shared module. Set the iOS deployment target to 18.2 or newer.
 
 ```kotlin
 // settings.gradle.kts
 dependencyResolutionManagement {
     repositories {
         google()
-        mavenLocal()
         mavenCentral()
     }
 }
@@ -75,30 +66,22 @@ dependencyResolutionManagement {
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("zone.ien.navigation:navigation:1.0.0-alpha02-dev10")
+            implementation("zone.ien.navigation:navigation:1.0.0-alpha04")
+            implementation("org.jetbrains.androidx.navigation3:navigation3-ui:1.2.0")
         }
     }
 }
 ```
 
-Alternatively, include the existing `library` module in your build and use a project dependency, as the [example module](example/shared/build.gradle.kts) does.
+The library exposes `androidx.navigation3:navigation3-runtime:1.2.1` transitively. The example uses `navigation3-ui` to render `NavDisplay` outside iOS. To run the examples below, apply the serialization plugin matching your app's Kotlin version and add Compose Material 3. If you use per-entry ViewModels, also add `org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3:2.11.0`. [Project version catalog](gradle/libs.versions.toml) · [Maven Central versions](https://repo.maven.apache.org/maven2/zone/ien/navigation/navigation/maven-metadata.xml)
 
-To use the Maven Central release, keep `google()` and `mavenCentral()`, omit `mavenLocal()`, and specify version `1.0.0-alpha01`. Check the [Maven metadata](https://repo.maven.apache.org/maven2/zone/ien/navigation/navigation/maven-metadata.xml) for published versions. That release does not contain every API in the current source.
+To test a local source build, run `./gradlew :library:publishToMavenLocal` from the repository root and put `mavenLocal()` before `mavenCentral()` in the app's repositories. You can also use a project dependency when the library module is part of the same build. [Example dependency configuration](example/shared/build.gradle.kts)
 
 ### Automated publishing
 
-The [publishing workflow](.github/workflows/publish.yml) runs when a GitHub Release or prerelease is published. Its tag must match `lib-version-name` in `gradle/libs.versions.toml` (for the current source: `v1.0.0-alpha02-dev10`). After the full CI passes for the same release commit, it signs all library targets, uploads them to Maven Central, and automatically releases them.
+The [publishing workflow](.github/workflows/publish.yml) runs when a GitHub Release or prerelease is published. Its tag must match `lib-version-name` in `gradle/libs.versions.toml` (for the current source: `v1.0.0-alpha04`). After the full CI passes for the same release commit, it signs all library targets, uploads them to Maven Central, and automatically releases them.
 
 Configure the same Actions Secrets as compose-hig: `SONATYPE_USERNAME`, `SONATYPE_PASSWORD` (Central Portal token), `GPG_KEY` (ASCII-armored private key), and `GPG_PASSWORD` (key passphrase). The Central Portal account must have permission to publish `zone.ien.navigation`, and the signing public key must be available on a key server. The workflow does not print secret values.
-
-Your app also needs:
-
-- The Kotlin serialization plugin for `@Serializable` routes, matching the app's Kotlin version.
-- `org.jetbrains.androidx.navigation3:navigation3-ui:1.2.0` for `NavDisplay` outside iOS.
-- Compose Material 3 if your app uses the Material UI shown below.
-- `org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3:2.11.0` if you need per-entry ViewModels.
-
-The library exposes `androidx.navigation3:navigation3-runtime:1.2.1` transitively and does not depend on `navigation3-ui` or Material 3. See the [version catalog](gradle/libs.versions.toml) and [compatibility](#compatibility) for the repository's toolchain.
 
 <a id="3단계-navdisplay를-nativestack으로-감쌉니다"></a>
 <a id="4단계-ios-진입점을-한-줄로-바꿉니다"></a>
@@ -106,7 +89,7 @@ The library exposes `androidx.navigation3:navigation3-runtime:1.2.1` transitivel
 
 ## Quick start
 
-After installation, put this minimal stack in `commonMain`. Imports are included; enable the serialization plugin first. Register `NavKey` subtypes so non-Android targets can save the back stack.
+Use `NativeStack` for an app without tabs. Put the following `App.kt` in the shared module's `commonMain`. Register the `NavKey` subtypes in `SavedStateConfiguration` so the back stack can be saved across platforms. Apply the app theme to each screen through `NativeNavigationFrame.frame`.
 
 ```kotlin
 import androidx.compose.foundation.layout.padding
@@ -131,7 +114,6 @@ import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 import zone.ien.navigation.NativeNavigationFrame
 import zone.ien.navigation.NativeStack
-import zone.ien.navigation.NativeScrollContent
 import zone.ien.navigation.nativeContentPadding
 import zone.ien.navigation.nativeScreen
 
@@ -150,9 +132,7 @@ private val navigationConfiguration = SavedStateConfiguration {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App() {
-    NativeNavigationFrame(frame = { content ->
-        MaterialTheme { NativeScrollContent { content() } }
-    }) {
+    NativeNavigationFrame(frame = { content -> MaterialTheme { content() } }) {
         val backStack = rememberNavBackStack(navigationConfiguration, Home)
         val provider = remember(backStack) {
             entryProvider<NavKey> {
@@ -185,7 +165,7 @@ fun App() {
 }
 ```
 
-Android calls `setContent { App() }`; desktop calls `App()` inside its window. In `iosMain`, expose the native root:
+Android calls `setContent { App() }` and Desktop calls `App()` inside its window. In the shared module's `iosMain/MainViewController.kt`, replace the existing `ComposeUIViewController { App() }` with the following.
 
 ```kotlin
 import platform.UIKit.UIViewController
@@ -194,19 +174,22 @@ import zone.ien.navigation.NativeNavigationViewController
 fun MainViewController(): UIViewController = NativeNavigationViewController { App() }
 ```
 
-Embed it from SwiftUI as below, with `import SwiftUI`, `import UIKit`, and your Kotlin framework import (`Shared` in the example). Keep the existing `UIViewControllerRepresentable` if you already have one.
+Return this controller from your existing SwiftUI `UIViewControllerRepresentable`. `Shared` is the example's Kotlin framework name. Use your own framework's `baseName` in the import.
 
 ```swift
+import SwiftUI
+import UIKit
+import Shared
+
 struct ComposeView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIViewController {
         MainViewControllerKt.MainViewController()
     }
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
 }
-// ComposeView().ignoresSafeArea()
 ```
 
-A UIKit app can assign the result to `window.rootViewController`. Tap **Open detail**, then go back. iOS uses the system navigation controller; Android/desktop use the Material bar above. To try the complete repository example, run `example/run-sample.sh ios` or `example/run-sample.sh android` from the repository root.
+Place `ComposeView().ignoresSafeArea()` in the SwiftUI `WindowGroup` so UIKit manages the screen insets. A UIKit app can assign the result to `window.rootViewController`. Tap **Open detail**, then go back. iOS uses the system navigation controller, while Android and Desktop use the Material bar above. To try the complete repository example, run `example/run-sample.sh ios` or `example/run-sample.sh android` from the repository root.
 
 <a id="도입-체크리스트"></a>
 <a id="반드시-할-일"></a>
@@ -275,7 +258,7 @@ Keep the routes, per-tab back stacks, and navigation calls such as `backStack.ad
 
 #### 2. Move the existing Scaffold into NativeTabs
 
-Here is the updated `App()`. See the [complete App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt) for imports. It uses the sample's existing `HomeScreen`, `SettingsScreen`, `DetailScreen`, and route declarations.
+The sample's `App()` declares both tab stacks and the native metadata for each route. Use the sample's screen implementations and routes to run this code. [App.kt and imports](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt) · [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/Screens.kt)
 
 ```kotlin
 @OptIn(ExperimentalMaterial3Api::class)
@@ -284,35 +267,58 @@ fun App() {
     val home = rememberNavBackStack(navigationConfiguration, HomeRoute)
     val settings = rememberNavBackStack(navigationConfiguration, SettingsRoute)
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var pendingUpdates by rememberSaveable { mutableIntStateOf(0) }
     val stacks = listOf(home, settings)
     val openDetail: (Int) -> Unit = { id -> stacks[selectedTab].add(DetailRoute(id)) }
 
-    // Apply the existing app theme and scroll bounce to each iOS screen.
     NativeNavigationFrame(frame = { content ->
-        MaterialTheme { NativeScrollContent { content() } }
+        val colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+        MaterialTheme(colorScheme = colorScheme) {
+            Surface { NativeScrollContent { content() } }
+        }
     }) {
-        // Use native tabs and stacks on iOS, and the Material UI below elsewhere.
         NativeTabs(
             tabs = listOf(
                 NativeTab("Home", "house", home),
-                NativeTab("Settings", "gearshape", settings),
+                NativeTab("Settings", "gearshape", settings, image = null, badgeCount = pendingUpdates),
             ),
             selectedTab = selectedTab,
             onTabSelected = { selectedTab = it },
             entryProvider = entryProvider {
-                // Declare entry metadata so UIKit knows the title before pushing.
                 entry<HomeRoute>(metadata = nativeScreen(title = "Home", largeTitle = true)) {
-                    HomeScreen(onOpenDetail = openDetail)
+                    HomeScreen(onOpenDetail = openDetail, onRefreshCompleted = { pendingUpdates++ })
                 }
                 entry<SettingsRoute>(metadata = nativeScreen(title = "Settings", largeTitle = true)) {
-                    SettingsScreen(onOpenDetail = { openDetail(42) })
+                    SettingsScreen(
+                        pendingUpdates = pendingUpdates,
+                        onClearUpdates = { pendingUpdates = 0 },
+                        onOpenDetail = { openDetail(42) },
+                        onOpenPreview = { settings.add(DetailRoute(id = 42, preview = true)) },
+                    )
                 }
-                entry<DetailRoute>(metadata = { route -> nativeScreen(title = "Detail ${route.id}") }) { route ->
-                    DetailScreen(id = route.id)
+                entry<DetailRoute>(metadata = { route ->
+                    if (route.preview) {
+                        nativeScreen(title = "미리보기", hidesNavigationBar = true)
+                    } else {
+                        nativeScreen(
+                            title = "Detail ${route.id}",
+                            initialTrailing = listOf(
+                                nativeBarTransitionPlaceholder(
+                                    title = favoriteActionTitle,
+                                    systemImage = "star",
+                                ),
+                            ),
+                        )
+                    }
+                }) { route ->
+                    if (route.preview) {
+                        PreviewScreen(id = route.id, onBack = { settings.removeLastOrNull() })
+                    } else {
+                        DetailScreen(id = route.id)
+                    }
                 }
             },
         ) {
-            // Existing Material 3 + NavDisplay layout. This block does not run on iOS.
             Scaffold(
                 topBar = {
                     TopAppBar(
@@ -328,7 +334,15 @@ fun App() {
                             NavigationBarItem(
                                 selected = selectedTab == index,
                                 onClick = { onTabSelected(index) },
-                                icon = { Text(text = tab.title) },
+                                icon = {
+                                    BadgedBox(badge = {
+                                        tab.badgeCount?.takeIf { it > 0 }?.let { count ->
+                                            Badge { Text(text = count.toString()) }
+                                        }
+                                    }) {
+                                        Text(text = tab.title)
+                                    }
+                                },
                             )
                         }
                     }
@@ -349,7 +363,7 @@ fun App() {
 
 #### 3. Connect screen scrolling and padding
 
-Reuse the existing `LazyColumn` state and connect both returned values. This is the body of `HomeScreen(onOpenDetail)`; [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/Screens.kt) contains the complete implementation and imports.
+Reuse the existing `LazyColumn` state and connect both returned values. This fragment shows the scroll integration. The full `HomeScreen` includes pull-to-refresh and a bar subtitle. [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/Screens.kt)
 
 ```kotlin
 val state = rememberLazyListState()
@@ -471,7 +485,7 @@ NativeTabs(
 ) { MaterialChrome() }
 ```
 
-This fragment extends the quick start with your `Settings` route, provider, and `NativeNavigationScope<NavKey>.MaterialChrome()` renderer; the current minimal [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt) puts the Material `Scaffold` and `NavDisplay` directly inside the block instead of using a separate renderer.
+This fragment extends the quick start with your `Settings` route, provider, and `NativeNavigationScope<NavKey>.MaterialChrome()` renderer. The bundled sample puts the Material `Scaffold` and `NavDisplay` directly inside the block. [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt)
 
 - iOS creates a `UITabBarController` with one `UINavigationController` per tab. Each tab's decorated entries retain saveable state and ViewModels on other platforms too.
 - `sharedBackStack` may be empty. Its screens always hide the tab bar and push above the selected tab. `onSharedBack` removes one shared entry. If the app changes `selectedTab` while a shared screen is visible, the shared screens move to the new tab without animation.
@@ -551,6 +565,8 @@ entry<Detail>(metadata = { key -> nativeScreen(title = "Detail ${key.id}", hides
 | --- | --- | --- |
 | `title` | `null` | `navigationItem.title`; set static titles before push starts |
 | `largeTitle` | `false` | A large title that collapses with scrolling; prefer it only on stack roots |
+| `hidesNavigationBar` | Omitted | Set to `true` to hide the native navigation bar. Once a stack uses this option, screens that omit it show the bar. |
+| `initialTrailing` | Omitted | Supplies trailing buttons at the start of a push. Use `nativeBarTransitionPlaceholder` for a disabled placeholder. `NativeBarItems` replaces these buttons after the transition. |
 | `hidesTabBar` | `false` | Uses `UITabBarController`; screens pushed above it also keep the bar hidden |
 | `titleImage` | `null` | A `@Composable () -> Painter` rendered as a 28pt-high `titleView` with its aspect ratio |
 
@@ -616,7 +632,7 @@ With nested `NativeScrollContent` wrappers, the inner content owns the bounce so
 
 ### Bar items, menus, and search
 
-Declare `NativeBarItems` inside screen content. The following `EditorBar` takes screen state and callbacks and declares bar buttons, menu items, and a toolbar together. The current minimal [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt) omits bar-item demos; call this function from a screen that needs these actions.
+Declare `NativeBarItems` inside screen content. The following `EditorBar` takes screen state and callbacks and declares bar buttons, menu items, and a toolbar together. See the detail screen's actions in the bundled example. [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/Screens.kt)
 
 ```kotlin
 import androidx.compose.runtime.Composable
@@ -845,7 +861,7 @@ These are the repository's configured versions, not a claim that every version c
 | iOS | 18.2+, `iosArm64` and `iosSimulatorArm64`; Liquid Glass requires an iOS 26+ SDK build |
 | Other library targets | `jvm`, browser-only `js` and `wasmJs` |
 
-CI runs JVM, Android host, iOS simulator, JS, and Wasm tests and builds the Android/desktop examples. It does not build the iOS app or run XCUITest. The repository records XCUITest runs on iOS 18.5 and 27.2 and manual Android checks in [AGENTS.md](AGENTS.md); these are prior results, not a guarantee for every current change. The latest recorded title-image run on iOS 27.2 passed 15 UI tests; iOS 18.x was not rerun for that feature.
+CI runs JVM, Android host, iOS simulator, JS, and Wasm tests and builds the Android/desktop examples. It does not build the iOS app or run XCUITest. The repository records XCUITest runs on iOS 18.5 and 27.2 and manual Android checks in [the verification history](docs/verification.md); these are prior results, not a guarantee for every current change. The latest recorded title-image run on iOS 27.2 passed 15 UI tests; iOS 18.x was not rerun for that feature.
 
 Known boundaries:
 
@@ -863,7 +879,7 @@ Known boundaries:
 
 ## Example apps
 
-The [example](example) shares one `App()` across Android, desktop, and iOS. It keeps only Home and Settings tabs plus a detail screen. Comments marked `추가:` identify the integration added to an ordinary Material 3 `Scaffold` + Navigation 3 `NavDisplay` app: native tabs, screen metadata, theme and scroll integration, and the iOS entry point. Optional login, search, menus, title images, and process restoration demos are omitted.
+The [example](example) shares one `App()` across Android, Desktop, and iOS. Pull to refresh in Home to update the Settings tab badge. The detail screen shows a disabled button during the transition and a favorite action. Open Preview from Settings to see the native navigation bar hidden.
 
 ```bash
 example/run-sample.sh
@@ -905,7 +921,7 @@ python3 -I example/iosUITests/timeline.py build/ui-tests/<UDID>
 - The `example.iosApp` scheme currently lives in ignored `xcuserdata`; a fresh clone may need a scheme created in Xcode before the command above works.
 - The UI harness builds/installs the example and tests it from a separate Xcode project. Results, app logs, and periodic screenshots go to `build/ui-tests/<UDID>/`.
 - Web tests run in a headless browser, not Node.js. After changing web dependencies, run `./gradlew kotlinUpgradeYarnLock kotlinWasmUpgradeYarnLock`.
-- If restoration tests report `RESTORE none` on a reused simulator, check scene-session logs and retry on a fresh supported simulator; the repository records simulator scene-state failures. Search tests have also shown simulator keyboard-dependent failures; see [the verification history](AGENTS.md).
+- If restoration tests report `RESTORE none` on a reused simulator, check scene-session logs and retry on a fresh supported simulator; the repository records simulator scene-state failures. Search tests have also shown simulator keyboard-dependent failures; see [the verification history](docs/verification.md).
 
 <a id="프로젝트-구조"></a>
 <a id="structure"></a>
@@ -933,7 +949,7 @@ python3 -I example/iosUITests/timeline.py build/ui-tests/<UDID>
 
 ## Contributing and references
 
-Read [AGENTS.md](AGENTS.md) for project goals, architecture decisions, contributor instructions, and verification history. Keep library code in `library` and demo/test-only behavior in `example`.
+Keep library code in `library` and demo/test-only behavior in `example`. [Contributor instructions](AGENTS.md) · [Architecture and decisions](docs/architecture.md) · [Build and verification history](docs/verification.md)
 
 Related official work:
 
