@@ -19,11 +19,11 @@ dependencies {
 
 compose.desktop {
     application {
-        mainClass = "zone.ien.navigation.example.MainKt"
+        mainClass = "zone.ien.navite.example.MainKt"
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "Example"
+            packageName = "NaviteExample"
             packageVersion = "1.0.0"
         }
     }

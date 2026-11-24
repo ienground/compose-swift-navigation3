@@ -53,7 +53,7 @@ python3 -I example/iosUITests/timeline.py build/ui-tests/<UDID>               # 
 
 - `run.sh`가 하는 일
   - 예제 앱을 빌드해 설치하고, 별도 프로젝트 `example/iosUITests/iosUITests.xcodeproj`의 UI 테스트를 실행한다. 예제 앱 Xcode 프로젝트는 건드리지 않는다.
-  - 테스트는 설치된 앱을 bundle id로 띄운다.
+- 테스트는 설치된 `NaviteExample.app`을 번들 ID `zone.ien.navite.example`로 띄운다.
 - 결과는 `build/ui-tests/<UDID>/`에 남는다.
   - `xcodebuild.log`: 테스트 결과와 `[HARNESS]` 단계 표시
   - `app.log`: 앱의 시스템 로그

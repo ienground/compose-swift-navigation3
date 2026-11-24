@@ -1,4 +1,4 @@
-rootProject.name = "compose-swift-navigation3"
+rootProject.name = "navite"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {

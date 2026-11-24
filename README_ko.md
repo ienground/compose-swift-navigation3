@@ -1,11 +1,18 @@
-# compose-swift-navigation3
+# Navite
+
+<img src="images/native.png" alt="Navite 아이콘" width="96" height="96">
 
 [English](README.md) | [한국어](README_ko.md)
 
-**Navigation 3**로 만든 Compose Multiplatform 앱에 실제 UIKit 내비게이션을 연결하는 라이브러리입니다.
-iOS에서는 Kotlin 백스택을 실제 `UITabBarController`와 `UINavigationController`로 보여줍니다. Android·Desktop·Web에서는 `otherPlatforms` 블록으로 기존 `NavDisplay`와 앱 UI를 실행합니다.
+**Navigate natively.**
 
-라우트, 백스택, 엔트리 제공자, 화면, ViewModel, 루트 `App()`은 공통 코드에 둡니다. 라이브러리는 Kotlin으로 구현되어 별도의 Swift 내비게이션 계층이 필요 없습니다.
+Compose Multiplatform용 네이티브 내비게이션 라이브러리입니다.
+
+Navite(나바이트)는 Navigation과 Native의 합성어입니다. Native의 철자 순서를 바꿔 Navigation의 첫 부분인 `Nav`로 시작하도록 만들었습니다.
+
+Kotlin에서 하나의 **Navigation 3** 구조를 유지하면서 각 플랫폼의 내비게이션 UI를 사용합니다. iOS에서는 Kotlin/Native를 통해 Kotlin 백스택을 실제 UIKit `UITabBarController`와 `UINavigationController`에 직접 연결합니다. Android·Desktop·Web에서는 `otherPlatforms` 블록에서 앱의 `NavDisplay`와 내비게이션 UI를 실행합니다.
+
+라우트, 백스택, 엔트리 제공자, 화면, ViewModel, 루트 `App()`은 공통 코드에 둡니다.
 
 <a id="toc"></a>
 
@@ -13,6 +20,7 @@ iOS에서는 Kotlin 백스택을 실제 `UITabBarController`와 `UINavigationCon
 
 - [주요 기능](#features)
 - [설치](#installation)
+  - [Navite로 이전하기](#navite-migration)
 - [빠른 시작](#quick-start)
 - [기존 Navigation 3 앱에서 옮기기](#migration)
   - [기본 Material 3 앱에 적용하기](#material3-integration)
@@ -49,7 +57,7 @@ iOS에서는 Kotlin 백스택을 실제 `UITabBarController`와 `UINavigationCon
 
 ## 설치
 
-기존 Compose Multiplatform 앱의 공유 모듈 `commonMain`에 의존성을 추가합니다. iOS 배포 대상은 18.2 이상으로 설정합니다.
+기존 Compose Multiplatform 앱의 공유 모듈 `commonMain`에 의존성을 추가합니다. iOS 배포 대상은 18.2 이상으로 설정합니다. 첫 배포 이후에는 `<version>`에 공개된 Navite 버전을 지정합니다. 소스는 아래 방법으로 로컬 빌드할 수 있습니다.
 
 ```kotlin
 // settings.gradle.kts
@@ -66,22 +74,31 @@ dependencyResolutionManagement {
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("zone.ien.navigation:navigation:1.0.0-alpha04")
+            implementation("zone.ien.navite:navite:<version>")
             implementation("org.jetbrains.androidx.navigation3:navigation3-ui:1.2.0")
         }
     }
 }
 ```
 
-라이브러리는 `androidx.navigation3:navigation3-runtime:1.2.1`을 전이 의존성으로 제공합니다. 예제의 `navigation3-ui`는 iOS 외 플랫폼에서 `NavDisplay`를 그릴 때 사용합니다. 아래 예제를 실행하려면 앱의 Kotlin 버전과 같은 serialization 플러그인을 적용하고 Compose Material 3를 추가합니다. 엔트리별 ViewModel을 쓴다면 `org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3:2.11.0`도 추가합니다. [프로젝트 버전 카탈로그](gradle/libs.versions.toml) · [Maven Central 버전 목록](https://repo.maven.apache.org/maven2/zone/ien/navigation/navigation/maven-metadata.xml)
+라이브러리는 `androidx.navigation3:navigation3-runtime:1.2.1`을 전이 의존성으로 제공합니다. 예제의 `navigation3-ui`는 iOS 외 플랫폼에서 `NavDisplay`를 그릴 때 사용합니다. 아래 예제를 실행하려면 앱의 Kotlin 버전과 같은 serialization 플러그인을 적용하고 Compose Material 3를 추가합니다. 엔트리별 ViewModel을 쓴다면 `org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3:2.11.0`도 추가합니다. [프로젝트 버전 카탈로그](gradle/libs.versions.toml)
 
-수정 중인 소스로 검증하려면 저장소 루트에서 `./gradlew :library:publishToMavenLocal`을 실행하고, 앱의 저장소 목록에서 `mavenCentral()` 앞에 `mavenLocal()`을 둡니다. 같은 빌드에 라이브러리 모듈이 있다면 프로젝트 의존성으로 연결할 수 있습니다. [예제의 의존성 설정](example/shared/build.gradle.kts)
+수정 중인 소스로 검증하려면 저장소 루트에서 `./gradlew :library:publishToMavenLocal`을 실행하고, 앱의 저장소 목록에서 `mavenCentral()` 앞에 `mavenLocal()`을 둡니다. 로컬 빌드의 `<version>`에는 버전 카탈로그의 `lib-version-name` 값을 사용합니다. 같은 빌드에 라이브러리 모듈이 있다면 프로젝트 의존성으로 연결할 수 있습니다. [예제의 의존성 설정](example/shared/build.gradle.kts)
+
+
+<a id="navite-migration"></a>
+
+### Navite로 이전하기
+
+`compose-swift-navigation3`의 새 이름은 Navite입니다. Gradle 의존성 또는 버전 카탈로그에서 `zone.ien.navigation:navigation`을 `zone.ien.navite:navite`로 바꾸고, Kotlin의 `zone.ien.navigation` import를 `zone.ien.navite`로 갱신합니다. 공개 클래스와 함수 이름은 그대로 사용할 수 있습니다. 라이브러리에 의존하는 모듈을 모두 다시 빌드합니다.
+
+`1.0.0-alpha04`를 포함한 이전 릴리스는 기존 좌표에서 받을 수 있습니다. Maven Central에서 전환할 때는 새 좌표로 배포된 버전을 사용합니다. 로컬 소스 빌드는 현재 체크아웃의 버전을 사용합니다. [이전 Maven Central 릴리스](https://repo.maven.apache.org/maven2/zone/ien/navigation/navigation/maven-metadata.xml)
 
 ### 자동 배포
 
-[배포 워크플로](.github/workflows/publish.yml)는 GitHub Release 또는 프리릴리스를 공개할 때 실행됩니다. `gradle/libs.versions.toml`의 `lib-version-name`과 태그가 일치해야 합니다(현재 소스 기준: `v1.0.0-alpha04`). 같은 릴리스 커밋의 CI 전체가 통과하면 모든 라이브러리 타깃을 서명하고 Maven Central에 업로드한 뒤 자동 공개합니다.
+[배포 워크플로](.github/workflows/publish.yml)는 GitHub Release 또는 프리릴리스를 공개할 때 실행됩니다. `gradle/libs.versions.toml`의 `lib-version-name`과 태그가 일치해야 합니다. 같은 릴리스 커밋의 CI 전체가 통과하면 모든 라이브러리 타깃을 서명하고 Maven Central에 업로드한 뒤 자동 공개합니다.
 
-저장소의 Actions Secrets에 compose-hig와 같은 `SONATYPE_USERNAME`, `SONATYPE_PASSWORD`(Central Portal 토큰), `GPG_KEY`(ASCII 형식의 비밀키), `GPG_PASSWORD`(키 암호)를 등록해야 합니다. Central Portal 계정에는 `zone.ien.navigation` 배포 권한이 있어야 하며, 서명 공개키도 키 서버에 등록되어 있어야 합니다. 워크플로는 Secret 값을 출력하지 않습니다.
+저장소의 Actions Secrets에 compose-hig와 같은 `SONATYPE_USERNAME`, `SONATYPE_PASSWORD`(Central Portal 토큰), `GPG_KEY`(ASCII 형식의 비밀키), `GPG_PASSWORD`(키 암호)를 등록해야 합니다. Central Portal 계정에는 `zone.ien.navite` 배포 권한이 있어야 하며, 서명 공개키도 키 서버에 등록되어 있어야 합니다. 워크플로는 Secret 값을 출력하지 않습니다.
 
 <a id="3단계-navdisplay를-nativestack으로-감쌉니다"></a>
 <a id="4단계-ios-진입점을-한-줄로-바꿉니다"></a>
@@ -112,10 +129,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
-import zone.ien.navigation.NativeNavigationFrame
-import zone.ien.navigation.NativeStack
-import zone.ien.navigation.nativeContentPadding
-import zone.ien.navigation.nativeScreen
+import zone.ien.navite.NativeNavigationFrame
+import zone.ien.navite.NativeStack
+import zone.ien.navite.nativeContentPadding
+import zone.ien.navite.nativeScreen
 
 @Serializable data object Home : NavKey
 @Serializable data class Detail(val id: Int) : NavKey
@@ -169,7 +186,7 @@ Android는 `setContent { App() }`, Desktop은 윈도우 안에서 `App()`을 호
 
 ```kotlin
 import platform.UIKit.UIViewController
-import zone.ien.navigation.NativeNavigationViewController
+import zone.ien.navite.NativeNavigationViewController
 
 fun MainViewController(): UIViewController = NativeNavigationViewController { App() }
 ```
@@ -222,7 +239,7 @@ SwiftUI의 `WindowGroup`에는 `ComposeView().ignoresSafeArea()`를 배치해 UI
 
 ### 기본 Material 3 앱에 적용하기
 
-[App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt)의 Home·Settings 탭 예제를 기준으로 설명합니다. 먼저 [설치](#installation)를 적용합니다. 기존 Material 3 앱에서 Navigation 3를 아직 사용하지 않는다면, [빠른 시작](#quick-start)처럼 `NavKey` 라우트와 `rememberNavBackStack`, `entryProvider`를 구성합니다. 이 라이브러리는 Material 3 화면을 자동으로 분석하지 않으므로 내비게이션 구조와 제목을 명시해야 합니다.
+[App.kt](example/shared/src/commonMain/kotlin/zone/ien/navite/example/App.kt)의 Home·Settings 탭 예제를 기준으로 설명합니다. 먼저 [설치](#installation)를 적용합니다. 기존 Material 3 앱에서 Navigation 3를 아직 사용하지 않는다면, [빠른 시작](#quick-start)처럼 `NavKey` 라우트와 `rememberNavBackStack`, `entryProvider`를 구성합니다. 이 라이브러리는 Material 3 화면을 자동으로 분석하지 않으므로 내비게이션 구조와 제목을 명시해야 합니다.
 
 #### 1. 기존 Material 구성을 확인합니다
 
@@ -254,11 +271,11 @@ MaterialTheme {
 }
 ```
 
-라우트, 탭별 백스택과 `backStack.add(...)`로 이동하는 코드는 그대로 사용합니다. 예제의 라우트·직렬화 설정은 [AppNavigation.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/AppNavigation.kt)에 있습니다.
+라우트, 탭별 백스택과 `backStack.add(...)`로 이동하는 코드는 그대로 사용합니다. 예제의 라우트·직렬화 설정은 [AppNavigation.kt](example/shared/src/commonMain/kotlin/zone/ien/navite/example/AppNavigation.kt)에 있습니다.
 
 #### 2. 기존 Scaffold를 NativeTabs 블록으로 옮깁니다
 
-예제의 `App()`은 탭별 백스택과 라우트별 네이티브 메타데이터를 선언합니다. 아래 코드를 실행하려면 예제의 화면 구현과 라우트를 함께 사용합니다. [App.kt 및 import](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt) · [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/Screens.kt)
+예제의 `App()`은 탭별 백스택과 라우트별 네이티브 메타데이터를 선언합니다. 아래 코드를 실행하려면 예제의 화면 구현과 라우트를 함께 사용합니다. [App.kt 및 import](example/shared/src/commonMain/kotlin/zone/ien/navite/example/App.kt) · [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navite/example/Screens.kt)
 
 ```kotlin
 @OptIn(ExperimentalMaterial3Api::class)
@@ -363,7 +380,7 @@ fun App() {
 
 #### 3. 화면의 스크롤과 여백을 연결합니다
 
-기존 `LazyColumn`의 state를 재사용하고 반환된 두 값을 연결합니다. 아래는 스크롤 연결만 보여주는 코드입니다. 당겨서 새로고침과 바 부제목까지 포함한 `HomeScreen`은 [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/Screens.kt)에 있습니다.
+기존 `LazyColumn`의 state를 재사용하고 반환된 두 값을 연결합니다. 아래는 스크롤 연결만 보여주는 코드입니다. 당겨서 새로고침과 바 부제목까지 포함한 `HomeScreen`은 [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navite/example/Screens.kt)에 있습니다.
 
 ```kotlin
 val state = rememberLazyListState()
@@ -390,7 +407,7 @@ LazyColumn(
 기존 `ComposeUIViewController { App() }`를 다음으로 바꿉니다. Android·Desktop 진입점은 계속 `App()`을 호출합니다.
 
 ```kotlin
-import zone.ien.navigation.NativeNavigationViewController
+import zone.ien.navite.NativeNavigationViewController
 
 fun MainViewController() = NativeNavigationViewController { App() }
 ```
@@ -428,7 +445,7 @@ NativeNavigationFrame(
 
 ## API
 
-공개 API의 패키지는 `zone.ien.navigation`입니다. 선언과 KDoc은 [공통 소스](library/src/commonMain/kotlin/zone/ien/navigation)와 [iOS 소스](library/src/iosMain/kotlin/zone/ien/navigation)에 있습니다.
+공개 API의 패키지는 `zone.ien.navite`입니다. 선언과 KDoc은 [공통 소스](library/src/commonMain/kotlin/zone/ien/navite)와 [iOS 소스](library/src/iosMain/kotlin/zone/ien/navite)에 있습니다.
 
 | API | 역할 |
 | --- | --- |
@@ -485,7 +502,7 @@ NativeTabs(
 ) { MaterialChrome() }
 ```
 
-이 부분 예제는 빠른 시작에 앱의 `Settings` 라우트, 제공자, `NativeNavigationScope<NavKey>.MaterialChrome()` 렌더러를 더한 것입니다. 저장소의 예제는 블록 안에 Material `Scaffold`와 `NavDisplay`를 직접 둡니다. [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt)
+이 부분 예제는 빠른 시작에 앱의 `Settings` 라우트, 제공자, `NativeNavigationScope<NavKey>.MaterialChrome()` 렌더러를 더한 것입니다. 저장소의 예제는 블록 안에 Material `Scaffold`와 `NavDisplay`를 직접 둡니다. [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navite/example/App.kt)
 
 - iOS에서는 `UITabBarController`와 탭마다 하나의 `UINavigationController`가 됩니다. 다른 플랫폼도 탭별 decorated 엔트리를 유지하므로 저장 가능 상태와 ViewModel이 유지됩니다.
 - `sharedBackStack`은 비어 있어도 됩니다. 공유 화면은 항상 탭 바를 숨기고 선택된 탭 위에 push됩니다. `onSharedBack`은 공유 엔트리 하나를 제거합니다. 공유 화면이 보이는 동안 앱이 `selectedTab`을 바꾸면 애니메이션 없이 새 탭으로 옮겨 갑니다.
@@ -506,8 +523,8 @@ NativeTabs(
 `NativeNavigationTint`는 iOS 뒤로 버튼·바 액션·툴바에 적용할 강조색, `NativeTabBarTint`는 선택 탭 아이콘·제목 색을 지정합니다. 아래는 기존 앱의 `appAccent`, `AppTheme`, `backStack`, `provider`를 사용하는 부분 예제입니다.
 
 ```kotlin
-import zone.ien.navigation.NativeNavigationTint
-import zone.ien.navigation.NativeTabBarTint
+import zone.ien.navite.NativeNavigationTint
+import zone.ien.navite.NativeTabBarTint
 
 NativeNavigationFrame(
     providers = { content ->
@@ -545,7 +562,7 @@ NativeNavigationFrame(
 
 탭 바까지 덮는 바깥 스택이 필요하면 엔트리로 `listOf(NavEntry<NavKey>(TabsKey) { TabsChrome(tabEntries) }) + sharedEntries`를 사용합니다. `TabsKey`와 `TabsChrome`은 앱에서 정의합니다.
 
-아직 composition에 남은 화면 중 가장 최근에 등록한 바·검색 선언이 우선합니다. 새 화면이 선언하지 않으면 나가는 화면의 선언이 잠시 남을 수 있습니다. `systemImage`는 iOS SF Symbol 이름이므로 Android 아이콘은 렌더러에서 정합니다. 최소 도입 예제는 [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt)를 참고하세요. 선택 기능인 메뉴·툴바·검색은 샘플에서 생략합니다.
+아직 composition에 남은 화면 중 가장 최근에 등록한 바·검색 선언이 우선합니다. 새 화면이 선언하지 않으면 나가는 화면의 선언이 잠시 남을 수 있습니다. `systemImage`는 iOS SF Symbol 이름이므로 Android 아이콘은 렌더러에서 정합니다. 최소 도입 예제는 [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navite/example/App.kt)를 참고하세요. 선택 기능인 메뉴·툴바·검색은 샘플에서 생략합니다.
 
 <a id="1단계-엔트리에-화면-정보를-더합니다"></a>
 <a id="2-엔트리와-화면-메타데이터-공통"></a>
@@ -632,13 +649,13 @@ Scaffold(bottomBar = { FixedActions() }) { padding ->
 
 ### 바 아이템, 메뉴, 검색
 
-화면 Composable 안에서 `NativeBarItems`를 선언합니다. 아래 `EditorBar`는 화면의 상태와 콜백을 받아 바 버튼·메뉴 항목·툴바를 함께 구성하는 예제입니다. 실제 예제의 상세 화면에 선언한 바 액션도 확인할 수 있습니다. [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/Screens.kt)
+화면 Composable 안에서 `NativeBarItems`를 선언합니다. 아래 `EditorBar`는 화면의 상태와 콜백을 받아 바 버튼·메뉴 항목·툴바를 함께 구성하는 예제입니다. 실제 예제의 상세 화면에 선언한 바 액션도 확인할 수 있습니다. [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navite/example/Screens.kt)
 
 ```kotlin
 import androidx.compose.runtime.Composable
-import zone.ien.navigation.NativeBarButton
-import zone.ien.navigation.NativeBarItems
-import zone.ien.navigation.NativeMenuAction
+import zone.ien.navite.NativeBarButton
+import zone.ien.navite.NativeBarItems
+import zone.ien.navite.NativeMenuAction
 
 @Composable
 fun EditorBar(
@@ -801,7 +818,7 @@ fun saveNavigationState(controller: UIViewController): NSData? =
     saveNativeNavigationState(controller)
 ```
 
-`platform.Foundation.NSData`, `platform.UIKit.UIViewController`, 위 두 `zone.ien.navigation` API를 import합니다. 빠른 시작의 인자 없는 Swift 브리지 대신 다음 scene 저장 브리지를 사용합니다.
+`platform.Foundation.NSData`, `platform.UIKit.UIViewController`, 위 두 `zone.ien.navite` API를 import합니다. 빠른 시작의 인자 없는 Swift 브리지 대신 다음 scene 저장 브리지를 사용합니다.
 
 ```swift
 final class NavigationHolder { var controller: UIViewController? }
@@ -879,7 +896,7 @@ CI는 JVM·Android host·iOS 시뮬레이터·JS·Wasm 테스트와 Android·Des
 
 ## 예제 앱
 
-[예제](example)는 Android·Desktop·iOS가 `App()` 하나를 공유합니다. Home에서 당겨서 새로고침하면 Settings 탭의 배지가 갱신됩니다. 상세 화면에서는 전환 중 비활성 버튼과 즐겨찾기 액션을, Settings의 미리보기에서는 네이티브 상단 바 숨김을 확인할 수 있습니다.
+[Navite Example](example)은 Android·Desktop·iOS에서 `App()` 하나를 공유합니다. iOS에서 Home의 Row 4를 열면 탭 바가 사라지고, 상세 화면이 닫힌 뒤 다시 나타납니다. Home에서 당겨서 새로고침하면 Settings 탭의 배지가 갱신됩니다. 상세 화면에서는 전환 중 비활성 버튼과 즐겨찾기 액션을, Settings의 미리보기에서는 네이티브 상단 바 숨김을 확인할 수 있습니다.
 
 ```bash
 example/run-sample.sh

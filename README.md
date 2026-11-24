@@ -1,11 +1,18 @@
-# compose-swift-navigation3
+# Navite
+
+<img src="images/native.png" alt="Navite icon" width="96" height="96">
 
 [English](README.md) | [한국어](README_ko.md)
 
-Native UIKit navigation for Compose Multiplatform apps built with **Navigation 3**.
-On iOS, the library connects your Kotlin back stacks to real `UITabBarController` and `UINavigationController` instances. Android, desktop, and web run your existing `NavDisplay` and app UI through the `otherPlatforms` block.
+**Navigate natively.**
 
-Routes, back stacks, entry providers, screens, ViewModels, and the root `App()` stay in common code. The library is implemented in Kotlin; it requires no Swift navigation layer.
+Native navigation for Compose Multiplatform.
+
+Navite (나바이트) combines Navigation and Native. It rearranges the letters of Native to begin with `Nav`, the opening of Navigation.
+
+Keep one Kotlin **Navigation 3** structure while each platform uses its own navigation UI. On iOS, Navite connects Kotlin back stacks directly to real UIKit `UITabBarController` and `UINavigationController` instances through Kotlin/Native. Android, desktop, and web run your app's `NavDisplay` and navigation UI through the `otherPlatforms` block.
+
+Routes, back stacks, entry providers, screens, ViewModels, and the root `App()` stay in common code.
 
 <a id="toc"></a>
 
@@ -13,6 +20,7 @@ Routes, back stacks, entry providers, screens, ViewModels, and the root `App()` 
 
 - [Features](#features)
 - [Installation](#installation)
+  - [Migrating to Navite](#navite-migration)
 - [Quick start](#quick-start)
 - [Migrating an existing Navigation 3 app](#migration)
   - [Adding the library to a basic Material 3 app](#material3-integration)
@@ -49,7 +57,7 @@ Kotlin owns the back stack. Native pops call the app's back callback once per re
 
 ## Installation
 
-Add the dependencies to `commonMain` in your existing Compose Multiplatform shared module. Set the iOS deployment target to 18.2 or newer.
+Add the dependencies to `commonMain` in your existing Compose Multiplatform shared module. Set the iOS deployment target to 18.2 or newer. Use a published Navite version for `<version>` when the first release is available, or build locally as shown below.
 
 ```kotlin
 // settings.gradle.kts
@@ -66,22 +74,31 @@ dependencyResolutionManagement {
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("zone.ien.navigation:navigation:1.0.0-alpha04")
+            implementation("zone.ien.navite:navite:<version>")
             implementation("org.jetbrains.androidx.navigation3:navigation3-ui:1.2.0")
         }
     }
 }
 ```
 
-The library exposes `androidx.navigation3:navigation3-runtime:1.2.1` transitively. The example uses `navigation3-ui` to render `NavDisplay` outside iOS. To run the examples below, apply the serialization plugin matching your app's Kotlin version and add Compose Material 3. If you use per-entry ViewModels, also add `org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3:2.11.0`. [Project version catalog](gradle/libs.versions.toml) · [Maven Central versions](https://repo.maven.apache.org/maven2/zone/ien/navigation/navigation/maven-metadata.xml)
+The library exposes `androidx.navigation3:navigation3-runtime:1.2.1` transitively. The example uses `navigation3-ui` to render `NavDisplay` outside iOS. To run the examples below, apply the serialization plugin matching your app's Kotlin version and add Compose Material 3. If you use per-entry ViewModels, also add `org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3:2.11.0`. [Project version catalog](gradle/libs.versions.toml)
 
-To test a local source build, run `./gradlew :library:publishToMavenLocal` from the repository root and put `mavenLocal()` before `mavenCentral()` in the app's repositories. You can also use a project dependency when the library module is part of the same build. [Example dependency configuration](example/shared/build.gradle.kts)
+To test a local source build, run `./gradlew :library:publishToMavenLocal` from the repository root and put `mavenLocal()` before `mavenCentral()` in the app's repositories. For this checkout, use the `lib-version-name` from the version catalog as `<version>`. You can also use a project dependency when the library module is part of the same build. [Example dependency configuration](example/shared/build.gradle.kts)
+
+
+<a id="navite-migration"></a>
+
+### Migrating to Navite
+
+`compose-swift-navigation3` is now Navite. Switch the Gradle dependency or version catalog entry from `zone.ien.navigation:navigation` to `zone.ien.navite:navite` and update Kotlin imports from `zone.ien.navigation` to `zone.ien.navite`. Public class and function names remain the same. Rebuild every module that depends on the library.
+
+Earlier releases, including `1.0.0-alpha04`, remain available under the original coordinates. Use a version published under the new coordinates when switching to Maven Central. Local source builds use the version in this checkout. [Legacy Maven Central releases](https://repo.maven.apache.org/maven2/zone/ien/navigation/navigation/maven-metadata.xml)
 
 ### Automated publishing
 
-The [publishing workflow](.github/workflows/publish.yml) runs when a GitHub Release or prerelease is published. Its tag must match `lib-version-name` in `gradle/libs.versions.toml` (for the current source: `v1.0.0-alpha04`). After the full CI passes for the same release commit, it signs all library targets, uploads them to Maven Central, and automatically releases them.
+The [publishing workflow](.github/workflows/publish.yml) runs when a GitHub Release or prerelease is published. Its tag must match `lib-version-name` in `gradle/libs.versions.toml`. After the full CI passes for the same release commit, it signs all library targets, uploads them to Maven Central, and automatically releases them.
 
-Configure the same Actions Secrets as compose-hig: `SONATYPE_USERNAME`, `SONATYPE_PASSWORD` (Central Portal token), `GPG_KEY` (ASCII-armored private key), and `GPG_PASSWORD` (key passphrase). The Central Portal account must have permission to publish `zone.ien.navigation`, and the signing public key must be available on a key server. The workflow does not print secret values.
+Configure the same Actions Secrets as compose-hig: `SONATYPE_USERNAME`, `SONATYPE_PASSWORD` (Central Portal token), `GPG_KEY` (ASCII-armored private key), and `GPG_PASSWORD` (key passphrase). The Central Portal account must have permission to publish `zone.ien.navite`, and the signing public key must be available on a key server. The workflow does not print secret values.
 
 <a id="3단계-navdisplay를-nativestack으로-감쌉니다"></a>
 <a id="4단계-ios-진입점을-한-줄로-바꿉니다"></a>
@@ -112,10 +129,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
-import zone.ien.navigation.NativeNavigationFrame
-import zone.ien.navigation.NativeStack
-import zone.ien.navigation.nativeContentPadding
-import zone.ien.navigation.nativeScreen
+import zone.ien.navite.NativeNavigationFrame
+import zone.ien.navite.NativeStack
+import zone.ien.navite.nativeContentPadding
+import zone.ien.navite.nativeScreen
 
 @Serializable data object Home : NavKey
 @Serializable data class Detail(val id: Int) : NavKey
@@ -169,7 +186,7 @@ Android calls `setContent { App() }` and Desktop calls `App()` inside its window
 
 ```kotlin
 import platform.UIKit.UIViewController
-import zone.ien.navigation.NativeNavigationViewController
+import zone.ien.navite.NativeNavigationViewController
 
 fun MainViewController(): UIViewController = NativeNavigationViewController { App() }
 ```
@@ -222,7 +239,7 @@ Check Android behavior after moving the chrome. On iOS, test push, native back, 
 
 ### Adding the library to a basic Material 3 app
 
-This walkthrough follows the Home and Settings tabs in [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt). Complete [installation](#installation) first. If your Material 3 app does not use Navigation 3 yet, add `NavKey` routes, `rememberNavBackStack`, and an `entryProvider` as shown in [Quick Start](#quick-start). The library does not inspect Material 3 screens automatically; declare the navigation structure and titles explicitly.
+This walkthrough follows the Home and Settings tabs in [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navite/example/App.kt). Complete [installation](#installation) first. If your Material 3 app does not use Navigation 3 yet, add `NavKey` routes, `rememberNavBackStack`, and an `entryProvider` as shown in [Quick Start](#quick-start). The library does not inspect Material 3 screens automatically; declare the navigation structure and titles explicitly.
 
 #### 1. Identify the existing Material layout
 
@@ -254,11 +271,11 @@ MaterialTheme {
 }
 ```
 
-Keep the routes, per-tab back stacks, and navigation calls such as `backStack.add(...)`. The sample's route and serialization declarations are in [AppNavigation.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/AppNavigation.kt).
+Keep the routes, per-tab back stacks, and navigation calls such as `backStack.add(...)`. The sample's route and serialization declarations are in [AppNavigation.kt](example/shared/src/commonMain/kotlin/zone/ien/navite/example/AppNavigation.kt).
 
 #### 2. Move the existing Scaffold into NativeTabs
 
-The sample's `App()` declares both tab stacks and the native metadata for each route. Use the sample's screen implementations and routes to run this code. [App.kt and imports](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt) · [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/Screens.kt)
+The sample's `App()` declares both tab stacks and the native metadata for each route. Use the sample's screen implementations and routes to run this code. [App.kt and imports](example/shared/src/commonMain/kotlin/zone/ien/navite/example/App.kt) · [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navite/example/Screens.kt)
 
 ```kotlin
 @OptIn(ExperimentalMaterial3Api::class)
@@ -363,7 +380,7 @@ fun App() {
 
 #### 3. Connect screen scrolling and padding
 
-Reuse the existing `LazyColumn` state and connect both returned values. This fragment shows the scroll integration. The full `HomeScreen` includes pull-to-refresh and a bar subtitle. [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/Screens.kt)
+Reuse the existing `LazyColumn` state and connect both returned values. This fragment shows the scroll integration. The full `HomeScreen` includes pull-to-refresh and a bar subtitle. [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navite/example/Screens.kt)
 
 ```kotlin
 val state = rememberLazyListState()
@@ -390,7 +407,7 @@ For a non-scrolling screen, apply `Modifier.padding(nativeContentPadding())`. On
 Replace the existing `ComposeUIViewController { App() }` with the following. Android and Desktop entry points continue calling `App()`.
 
 ```kotlin
-import zone.ien.navigation.NativeNavigationViewController
+import zone.ien.navite.NativeNavigationViewController
 
 fun MainViewController() = NativeNavigationViewController { App() }
 ```
@@ -428,7 +445,7 @@ This fragment uses your existing `LocalAppGraph`, `graph`, `AppTheme`, and `Root
 
 ## API
 
-Public APIs live in `zone.ien.navigation`. The [common source](library/src/commonMain/kotlin/zone/ien/navigation) and [iOS source](library/src/iosMain/kotlin/zone/ien/navigation) contain their declarations and KDoc.
+Public APIs live in `zone.ien.navite`. The [common source](library/src/commonMain/kotlin/zone/ien/navite) and [iOS source](library/src/iosMain/kotlin/zone/ien/navite) contain their declarations and KDoc.
 
 | API | Purpose |
 | --- | --- |
@@ -485,7 +502,7 @@ NativeTabs(
 ) { MaterialChrome() }
 ```
 
-This fragment extends the quick start with your `Settings` route, provider, and `NativeNavigationScope<NavKey>.MaterialChrome()` renderer. The bundled sample puts the Material `Scaffold` and `NavDisplay` directly inside the block. [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt)
+This fragment extends the quick start with your `Settings` route, provider, and `NativeNavigationScope<NavKey>.MaterialChrome()` renderer. The bundled sample puts the Material `Scaffold` and `NavDisplay` directly inside the block. [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navite/example/App.kt)
 
 - iOS creates a `UITabBarController` with one `UINavigationController` per tab. Each tab's decorated entries retain saveable state and ViewModels on other platforms too.
 - `sharedBackStack` may be empty. Its screens always hide the tab bar and push above the selected tab. `onSharedBack` removes one shared entry. If the app changes `selectedTab` while a shared screen is visible, the shared screens move to the new tab without animation.
@@ -506,8 +523,8 @@ Wrap `NativeTabs` in `NativeTabBarTint(color) { ... }` to set the selected tab i
 `NativeNavigationTint` supplies the iOS back-button, bar-action, and toolbar tint; `NativeTabBarTint` sets the selected tab icon and label tint. This fragment uses your existing `appAccent`, `AppTheme`, `backStack`, and `provider`.
 
 ```kotlin
-import zone.ien.navigation.NativeNavigationTint
-import zone.ien.navigation.NativeTabBarTint
+import zone.ien.navite.NativeNavigationTint
+import zone.ien.navite.NativeTabBarTint
 
 NativeNavigationFrame(
     providers = { content ->
@@ -545,7 +562,7 @@ The library draws no UI on these platforms. Read these `NativeNavigationScope` v
 
 For an outer stack that covers the tab chrome, use `listOf(NavEntry<NavKey>(TabsKey) { TabsChrome(tabEntries) }) + sharedEntries` as its entries. `TabsKey` and `TabsChrome` belong to your app.
 
-The most recently registered, still-composed screen's bar/search declarations win. An outgoing screen's declarations can remain temporarily when the incoming screen declares none. `systemImage` names are iOS SF Symbols; choose Android icons in your renderer. See [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/App.kt) for the minimal integration. Optional menus, toolbars, and search are omitted from the sample.
+The most recently registered, still-composed screen's bar/search declarations win. An outgoing screen's declarations can remain temporarily when the incoming screen declares none. `systemImage` names are iOS SF Symbols; choose Android icons in your renderer. See [App.kt](example/shared/src/commonMain/kotlin/zone/ien/navite/example/App.kt) for the minimal integration. Optional menus, toolbars, and search are omitted from the sample.
 
 <a id="1단계-엔트리에-화면-정보를-더합니다"></a>
 <a id="2-엔트리와-화면-메타데이터-공통"></a>
@@ -632,13 +649,13 @@ With nested `NativeScrollContent` wrappers, the inner content owns the bounce so
 
 ### Bar items, menus, and search
 
-Declare `NativeBarItems` inside screen content. The following `EditorBar` takes screen state and callbacks and declares bar buttons, menu items, and a toolbar together. See the detail screen's actions in the bundled example. [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navigation/example/Screens.kt)
+Declare `NativeBarItems` inside screen content. The following `EditorBar` takes screen state and callbacks and declares bar buttons, menu items, and a toolbar together. See the detail screen's actions in the bundled example. [Screens.kt](example/shared/src/commonMain/kotlin/zone/ien/navite/example/Screens.kt)
 
 ```kotlin
 import androidx.compose.runtime.Composable
-import zone.ien.navigation.NativeBarButton
-import zone.ien.navigation.NativeBarItems
-import zone.ien.navigation.NativeMenuAction
+import zone.ien.navite.NativeBarButton
+import zone.ien.navite.NativeBarItems
+import zone.ien.navite.NativeMenuAction
 
 @Composable
 fun EditorBar(
@@ -801,7 +818,7 @@ fun saveNavigationState(controller: UIViewController): NSData? =
     saveNativeNavigationState(controller)
 ```
 
-Use `platform.Foundation.NSData`, `platform.UIKit.UIViewController`, and the two `zone.ien.navigation` APIs above. Replace the quick start's no-argument Swift bridge with this scene-storage bridge:
+Use `platform.Foundation.NSData`, `platform.UIKit.UIViewController`, and the two `zone.ien.navite` APIs above. Replace the quick start's no-argument Swift bridge with this scene-storage bridge:
 
 ```swift
 final class NavigationHolder { var controller: UIViewController? }
@@ -879,7 +896,7 @@ Known boundaries:
 
 ## Example apps
 
-The [example](example) shares one `App()` across Android, Desktop, and iOS. Pull to refresh in Home to update the Settings tab badge. The detail screen shows a disabled button during the transition and a favorite action. Open Preview from Settings to see the native navigation bar hidden.
+The [Navite Example](example) shares one `App()` across Android, Desktop, and iOS. On iOS, open Row 4 in Home to see the tab bar fade out on push and fade back in after pop. Pull to refresh in Home to update the Settings tab badge. The detail screen shows a disabled button during the transition and a favorite action. Open Preview from Settings to see the native navigation bar hidden.
 
 ```bash
 example/run-sample.sh
