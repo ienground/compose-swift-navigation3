@@ -1,12 +1,14 @@
+<p align="center">
+  <img src="images/navite.png" width="128" height="128" alt="Navite icon">
+</p>
+
 # Navite
-
-<img src="images/native.png" alt="Navite icon" width="96" height="96">
-
-[English](README.md) | [한국어](README_ko.md)
 
 **Navigate natively.**
 
 Native navigation for Compose Multiplatform.
+
+**English** | [한국어](README_ko.md)
 
 Navite (나바이트) combines Navigation and Native. It rearranges the letters of Native to begin with `Nav`, the opening of Navigation.
 

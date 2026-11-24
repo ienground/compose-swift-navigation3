@@ -1,12 +1,14 @@
+<p align="center">
+  <img src="images/navite.png" width="128" height="128" alt="Navite 아이콘">
+</p>
+
 # Navite
-
-<img src="images/native.png" alt="Navite 아이콘" width="96" height="96">
-
-[English](README.md) | [한국어](README_ko.md)
 
 **Navigate natively.**
 
 Compose Multiplatform용 네이티브 내비게이션 라이브러리입니다.
+
+[English](README.md) | **한국어**
 
 Navite(나바이트)는 Navigation과 Native의 합성어입니다. Native의 철자 순서를 바꿔 Navigation의 첫 부분인 `Nav`로 시작하도록 만들었습니다.
 
