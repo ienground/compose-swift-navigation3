@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "zone.ien.navigation.example"
+    namespace = "zone.ien.navite.example"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "zone.ien.navigation.example"
+        applicationId = "zone.ien.navite.example"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1

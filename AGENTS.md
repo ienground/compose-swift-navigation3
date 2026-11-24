@@ -1,6 +1,6 @@
 # AGENTS.md
 
-`compose-swift-navigation3`는 Compose Multiplatform의 Navigation 3 백스택을 iOS 네이티브 내비게이션에 연결하는 라이브러리다.
+Navite는 Compose Multiplatform의 Navigation 3 백스택을 iOS 네이티브 내비게이션에 연결하는 라이브러리다.
 
 ## 작업별 참고 문서
 
@@ -10,7 +10,7 @@
 
 ## 플랫폼과 모듈 경계
 
-- `library/`는 배포 대상 KMP 라이브러리다. 예제와 검증 전용 코드는 `example/`에 둔다. Maven 좌표는 `zone.ien.navigation:navigation`이다.
+- `library/`는 배포 대상 KMP 라이브러리다. 예제와 검증 전용 코드는 `example/`에 둔다. Maven 좌표는 `zone.ien.navite:navite`이다.
 - `commonMain`에는 플랫폼 중립 API와 순수 Kotlin 로직을 둔다. 앱의 Route, 백스택, 화면 Composable, ViewModel, 루트 `App()`은 공통으로 유지한다.
 - iOS는 `iosMain`의 Kotlin/Native에서 실제 `UITabBarController`와 탭별 `UINavigationController`를 제어한다. 네이티브 전환, 뒤로 버튼과 스와이프, 내비게이션 바와 툴바를 유지한다. 라이브러리에 Swift 코드나 Compose 내비게이션 대체 경로를 추가하지 않는다.
 - Android·Desktop·Web은 `otherPlatforms`에서 앱의 기존 `Scaffold`와 `NavDisplay(entries, onBack = onBack)`를 실행한다. 라이브러리는 이 플랫폼의 UI를 그리지 않으며 `navigation3-ui`와 Material 3 의존성을 추가하지 않는다.

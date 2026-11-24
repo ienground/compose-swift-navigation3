@@ -39,8 +39,8 @@ for runtime in reversed(ios):
     -destination "platform=iOS Simulator,id=$udid" -derivedDataPath "$derived" build > "$ROOT/build/sample/ios-build.log" 2>&1 \
     || { echo "iOS build failed: build/sample/ios-build.log"; return 1; }
   xcrun simctl bootstatus "$udid" -b > /dev/null
-  xcrun simctl install "$udid" "$derived/Build/Products/Debug-iphonesimulator/Example.app"
-  xcrun simctl launch --terminate-running-process "$udid" zone.ien.navigation.example.Example > /dev/null
+  xcrun simctl install "$udid" "$derived/Build/Products/Debug-iphonesimulator/NaviteExample.app"
+  xcrun simctl launch --terminate-running-process "$udid" zone.ien.navite.example > /dev/null
   echo "iOS: running on $(xcrun simctl list devices | grep "$udid" | sed 's/ (Booted)//;s/^ *//')"
 }
 
@@ -71,7 +71,7 @@ run_android() {
   ./gradlew :example:androidApp:installDebug -q > "$ROOT/build/sample/android-build.log" 2>&1 \
     || { echo "Android build failed: build/sample/android-build.log"; return 1; }
   for serial in $serials; do
-    "$adb" -s "$serial" shell am start -n zone.ien.navigation.example/.MainActivity > /dev/null
+    "$adb" -s "$serial" shell am start -n zone.ien.navite.example/.MainActivity > /dev/null
     echo "Android: running on $("$adb" -s "$serial" shell getprop ro.product.model | tr -d '\r') ($serial)"
   done
 }

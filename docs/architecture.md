@@ -8,7 +8,7 @@
 
 ## 1. 프로젝트 목표
 
-**compose-swift-navigation3**는 Kotlin Multiplatform 라이브러리다. Compose Multiplatform과 Navigation 3로 만든 앱이 플랫폼마다 다음처럼 동작하도록 연결한다.
+**Navite(나바이트)**는 Compose Multiplatform용 네이티브 내비게이션 라이브러리다. Navigation과 Native를 결합한 이름으로, Native의 철자를 재구성해 `Nav`로 시작한다. 하나의 Kotlin Navigation 3 구조를 유지하면서 각 플랫폼의 내비게이션을 연결한다.
 
 | 플랫폼 | 동작 |
 | --- | --- |
@@ -46,7 +46,7 @@
 - 공통 선언: `NativeStack`/`NativeTabs`를 commonMain에 두고, 앱의 루트 `App()` 하나를 모든 플랫폼이 쓴다(6.6장)
 - 탭 위의 공유 화면: 어느 탭에서든 여는 화면을 `NativeTabs(sharedBackStack)` 하나로 둔다(6.6장)
 
-- `:library` (패키지 `zone.ien.navigation`, Maven 좌표 `zone.ien.navigation:navigation:<version>`)
+- `:library` (패키지 `zone.ien.navite`, Maven 좌표 `zone.ien.navite:navite:<version>`)
   - commonMain 공개 API
     - 스크롤 연동: `rememberNativeScroll(state, background)`, `NativeScroll`, `nativeContentPadding`, `Modifier.nativeScrollExclusion()`
     - 화면 메타데이터: `nativeScreen(...)`(제목 이미지 `titleImage` 포함), 그리고 메타데이터를 읽는 `NavEntry.nativeTitle` 등
@@ -161,7 +161,7 @@ iOS 내비게이션은 **UIKit `UITabBarController`와 탭마다 하나씩 둔 `
 
 **UIKit 구현 지침**
 - 화면은 엔트리마다 `ComposeUIViewController`를 하나씩 두고, 엔트리 고유 키와 컨트롤러를 매핑해 재사용한다.
-- 상세 화면의 탭 바 숨김은 iOS 18부터 제공되는 `UITabBarController.setTabBarHidden(_:animated:)`로 처리한다. `hidesBottomBarWhenPushed`는 push 시작 때 이전 화면의 큰 제목을 먼저 접으므로 쓰지 않는다. push의 전환 준비가 끝난 뒤 해당 화면까지의 스택을 기준으로 숨김 상태를 적용하고, 스와이프가 취소되면 다시 나타나는 화면이 상태를 복원한다.
+- 상세 화면의 탭 바 숨김은 `UITabBarController.setTabBarHidden(_:animated:)`로 처리한다. 하단 탭 바는 push가 시작되면 페이드아웃하고 전환 완료 시 숨긴다. pop으로 상세 화면이 사라지면 탭 바를 표시하고 페이드인한다. 스와이프를 취소하면 탭 바는 숨겨진 채로 유지된다.
 - 타이틀은 `navigationItem.title`, toolbar는 `navigationItem`의 bar button item 또는 `toolbarItems`로 구성한다. 버튼 동작은 selector 대신 `UIAction` 클로저로 연결한다.
 - 네이티브에서 시작된 pop(뒤로 버튼, 스와이프)은 `UINavigationControllerDelegate`의 `navigationController(_:didShow:animated:)`에서 감지한다. 인터랙티브 전환은 `transitionCoordinator`로 완료 여부를 확인한다.
 - 최소 지원 버전이 18.2이므로 iOS 18에서 추가된 UIKit API(`UITab`, `UITabGroup`, `UITabBarController.tabs`)는 쓸 수 있다.
@@ -256,7 +256,7 @@ iOS에서는 탑바 전체가 시스템 `UINavigationBar`다. Compose는 바 아
     - 예제 `testBottomEdge` 한 번에 이런 왕복이 28번, offset 잘림이 27번 있었다. 고친 뒤에는 각각 2번(처음 표시와 끝 도달)과 0번이다.
     - 고친 뒤 화면 이동량은 끝에 닿을 때 프레임당 41 → 36 → 24 → 16 → 9 → 4pt로 줄고, 넘어간 만큼 부드럽게 되돌아온다. Hotpot의 설정 탭(`ScrollState`)과 라이선스 목록(`LazyColumn`)을 녹화로 분석한 결과도 같았다.
   - 가로 pan은 proxy가 시작하지 않고 Compose(LazyRow, pager, slider)에 넘긴다.
-- **구현 위치** (`library/src`, 패키지 `zone.ien.navigation`)
+- **구현 위치** (`library/src`, 패키지 `zone.ien.navite`)
   - `commonMain/NativeScroll.kt`: 공개 API `rememberNativeScroll(LazyListState | LazyGridState | LazyStaggeredGridState | ScrollState)`, `NativeScroll(userScrollEnabled, contentPadding)`, `nativeContentPadding()`가 있다. 플랫폼 호스트 인터페이스 `NativeScrollHost`는 `LocalNativeScrollHost`로 제공된다. 호스트가 없으면 아무 일도 하지 않으므로 Android 동작은 바뀌지 않는다.
   - `commonMain/ScrollSync.kt`: 네이티브 offset과 Compose 위치 사이의 판단 로직이다. UIKit에 의존하지 않으며 `commonTest`에서 테스트한다.
   - `commonMain/ScrollPosition.kt`: 레이아웃마다 위치를 기록한다. 두 레이아웃 사이의 실제 이동량은 양쪽에 모두 보이는 같은 key의 아이템으로 계산한다. `dispatchRawDelta`가 보고하는 소비량은 리스트 끝에서 실제와 다를 수 있어서 쓰지 않는다.
@@ -353,7 +353,7 @@ iOS에서는 탑바 전체가 시스템 `UINavigationBar`다. Compose는 바 아
   - 공유 화면이 늘 선택된 탭에 붙으므로 상태 복원에 따로 저장할 값이 없다. 백스택은 앱의 `rememberNavBackStack`이 복원한다.
 - **iOS** (`TabsLayout`, `StackCoordinator`)
   - 선택된 탭의 목표 스택은 그 탭 엔트리 뒤에 공유 엔트리를 붙인 것이다. 나머지 탭에는 붙이지 않는다. diff와 전환은 기존 규칙(Kotlin → UIKit)을 그대로 쓴다.
-  - 공유 화면은 `EntryScreen.shared`로 탭 바 숨김을 요청한다. `StackCoordinator`가 push 직후 `UITabBarController.setTabBarHidden`으로 적용한다. 네이티브 pop·탭 전환에서는 화면의 `viewWillAppear` 다음 메인 큐에서 적용한다.
+  - 공유 화면은 `EntryScreen.shared`로 탭 바 숨김을 요청한다. `ComposeScreenController`가 화면 전환에 맞춰 숨김을 적용한다. 하단 탭 바는 이전 화면으로 돌아가는 pop이 완료된 뒤 페이드인한다.
   - UIKit이 pop하면 사라진 화면마다 공유 화면은 `onSharedBack`, 탭 화면은 그 탭의 `onBack`을 위에서부터 부른다.
   - 화면에 보이는 탭만 애니메이션한다. 선택되지 않은 탭이나 이번에 선택이 바뀌는 탭의 스택은 애니메이션 없이 바꾼다. 그래서 앱이 탭을 바꾸면 공유 화면은 이전 탭에서 빠지고 새 탭에 바로 붙는다.
     - 이전에는 선택되지 않은 탭도 애니메이션으로 바꿨다. 화면 밖이라 보이지 않았고, 진행 중인 전환이 남아 다음 적용이 `didShow`까지 미뤄질 수 있었다.
@@ -547,7 +547,7 @@ ViewModel은 저장하지 않는다(Android도 프로세스가 죽으면 잃는�
 **구현** (`HostComposition.kt`, `SavedStateCodec.kt`)
 - 호스트 composition의 `SaveableStateRegistry`와 `SavedStateRegistry`를 통째로 저장한다.
 - 엔트리별 상태는 `SaveableStateHolder`의 saver가 모은다. saver는 아직 composition에 있는 다른 화면의 registry까지 함께 저장한다.
-- **직렬화 형식**: 자체 텍스트 형식이다(태그 + 길이 접두). 새 의존성이 없다.
+- **직렬화 형식**: 자체 텍스트 형식이다(태그 + 길이 접두). 새 의존성이 없다. Navite 이전에 저장한 scene 상태를 읽을 수 있도록 형식 식별자를 유지한다.
   - 지원 타입: 기본형, 문자열, Char, 기본형 배열, Array, List, Set, Map, `SavedState`, `mutableStateOf`(기본 policy 3종), `mutableIntStateOf`/`Long`/`Float`/`Double`
   - snapshot state는 정확한 타입으로 되살린다. `MutableIntState`를 `MutableState`로 되살리면 `ClassCastException`이 나기 때문이다.
 - **저장할 수 없는 값**(enum, 임의 객체)
@@ -670,7 +670,9 @@ ViewModel은 저장하지 않는다(Android도 프로세스가 죽으면 잃는�
 | 2026-11-15 | `NativeTabs`에 탭 위의 공유 화면(`sharedBackStack`, `onSharedBack`)을 둔다. iOS는 선택된 탭의 `UINavigationController`에 이어서 push하고, 공유 화면은 항상 탭 바를 숨긴다. 앱이 탭을 바꾸면 공유 화면이 새 탭으로 옮겨 간다(6.6장). | 탭 화면 전체를 바깥 `NavDisplay`로 덮는 앱(Hotpot)은 상세 라우트를 탭마다 따로 쌓도록 내비게이션을 다시 짜야 했다(약 1,000줄). 공유 백스택이면 원래 백스택과 이동 코드를 그대로 쓴다. 탭 바를 항상 숨기면 "공유 화면이 보이는 중 사용자의 탭 전환"이 생기지 않아 의미가 단순하다. 검토한 대안: 탭 바를 보이게 두고 탭 전환 때 공유 화면을 비우거나 남기는 방식은 사용자가 보는 결과를 예측하기 어렵다. 중첩 선언(공유 스택의 루트 엔트리 안에 `NativeTabs`)은 iOS에서 화면 composition 안에 탭 컨트롤러를 두어야 해 6.6장 구조와 맞지 않는다. iOS 관례(탭마다 독립 스택)와 다르지만, 탭 바를 가리는 화면에서는 사용자 눈에 차이가 없다. |
 | 2026-11-16 | 바 버튼과 메뉴는 `image: Painter?`로 사용자 이미지를 받는다. | 공통 코드의 PNG·벡터 리소스와 `ImageVector`를 재사용하면서 실제 UIKit 버튼·메뉴를 유지한다. 제목 이미지의 변환기를 함께 쓰고, 최대 22×22pt의 template 이미지로 네이티브 tint를 적용한다. 기존 생성자는 유지한다. |
 | 2026-11-18 | 탭 바 숨김은 push 전환 완료 후 `UITabBarController.setTabBarHidden(_:animated:)`로 적용한다. | Hotpot과 순수 UIKit에서 `hidesBottomBarWhenPushed` 또는 push 직후 숨김을 적용하면 이전 큰 제목이 위로 움직였다. 전환 중 탭 바의 투명도만 변경해 여백을 유지하면 UIKit이 기존 큰 제목을 같은 높이에서 가로로 전환한다. 실제 애니메이션이 없는 화면에서는 즉시 적용한다. 전환이 완료될 때 해당 화면과 탭이 여전히 표시된 경우에만 숨긴다. |
-| 2026-11-15 | Maven artifactId를 `navigation`으로 줄인다. 좌표는 `zone.ien.navigation:navigation`이다. POM `name`과 iOS 로그 접두어(`zone.ien.navigation:`)도 맞춘다. `rootProject.name`, GitHub 저장소 이름과 URL, README 제목은 `compose-swift-navigation3`로 둔다. | 사용자 요청: 의존성 선언에 쓰기에 이름이 너무 길다. group이 이미 라이브러리를 구분하므로 artifactId는 짧아도 된다. 저장소 이름은 바꾸지 않았으므로 저장소를 가리키는 값은 그대로 둔다. mavenLocal로 받는 앱(Hotpot)은 버전 카탈로그의 `name`을 바꿔야 한다. |
+| 2026-11-24 | 하단 탭 바는 push 시작 시 페이드아웃하고 pop이 완료되면 페이드인한다. | 상세 화면을 닫는 동안 탭 바를 숨겨 두므로 뒤로 스와이프를 취소해도 탭 바가 드러나지 않는다. |
+| 2026-11-15 | 이전 Maven 좌표의 artifactId를 `navigation`으로 정했다. | 기존 릴리스는 이 좌표를 유지한다. [Navite 마이그레이션](../README_ko.md#navite-migration) |
+| 2026-11-24 | 브랜드는 Navite, 저장소와 Gradle 프로젝트 식별자는 `navite`, Kotlin 패키지는 `zone.ien.navite`, Maven 좌표는 `zone.ien.navite:navite`로 정한다. | Navigation과 Native를 결합한 이름으로, 공통 Kotlin 내비게이션과 플랫폼의 실제 네이티브 UI를 연결한다는 목적을 드러낸다. |
 
 ## 9. Git과 배포
 
@@ -678,9 +680,11 @@ ViewModel은 저장하지 않는다(Android도 프로세스가 죽으면 잃는�
 - 커밋, 푸시, PR 생성은 사용자가 요청할 때만 한다.
 - 파일을 만들거나 고친 뒤에는 `git add .`로 스테이징한다(커밋은 하지 않는다).
 - `local.properties`, `xcuserdata`, `.kotlin`, `build`는 gitignore 대상이다. 커밋하지 않는다.
-- 첫 프리릴리스 버전은 `1.0.0-alpha01`이며 `gradle/libs.versions.toml`에서 관리한다.
+- 현재 버전은 `gradle/libs.versions.toml`의 `lib-version-name`에서 관리한다. Navite의 첫 배포에는 새 좌표와 사용하지 않은 릴리스 태그를 사용한다.
 - `publish.yml`은 GitHub Release·프리릴리스 공개(`published`) 시 같은 커밋의 CI 전체를 실행하고, 통과하면 `:library`를 서명해 Maven Central에 업로드·자동 공개한다. 태그는 `v<lib-version-name>`과 일치해야 한다.
 - 배포 Secret 이름은 compose-hig와 같은 `SONATYPE_USERNAME`, `SONATYPE_PASSWORD`, `GPG_KEY`, `GPG_PASSWORD`다. 실제 Secret 값은 변경하지 않는다. 로컬 Maven 배포는 서명 없이 실행한다.
+- GitHub에서 저장소를 `ienground/navite`로 변경한 뒤 로컬 `origin` URL을 `https://github.com/ienground/navite.git`로 갱신한다. 외부 연동에 저장소 URL을 직접 설정한 경우 함께 갱신한다. [GitHub 저장소 이름 변경](https://docs.github.com/en/repositories/creating-and-managing-repositories/renaming-a-repository)
+- 첫 Maven Central 릴리스 전에 Central Portal의 배포 계정에 `zone.ien.navite` 권한이 있는지 확인한다. 필요한 경우 네임스페이스를 등록하고 검증한다. 릴리스에는 [Navite 마이그레이션 안내](../README_ko.md#navite-migration)를 연결한다. [Central Portal 네임스페이스 등록](https://central.sonatype.org/register/namespace/)
 
 ## 10. 참고 자료
 

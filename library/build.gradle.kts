@@ -9,7 +9,7 @@ plugins {
     alias(libs.plugins.vanniktechMavenPublish)
 }
 
-group = "zone.ien.navigation"
+group = "zone.ien.navite"
 version = libs.versions.lib.version.name.get()
 
 kotlin {
@@ -18,7 +18,7 @@ kotlin {
     jvm()
 
     android {
-        namespace = "zone.ien.navigation"
+        namespace = "zone.ien.navite"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
 
@@ -91,13 +91,13 @@ mavenPublishing {
         signAllPublications()
     }
 
-    coordinates(group.toString(), "navigation", version.toString())
+    coordinates(group.toString(), "navite", version.toString())
 
     pom {
-        name = "navigation"
-        description = "Native iOS navigation (UIKit) for Compose Multiplatform Navigation 3 apps."
+        name = "Navite"
+        description = "Native navigation for Compose Multiplatform."
         inceptionYear = "2026"
-        url = "https://github.com/ienground/compose-swift-navigation3"
+        url = "https://github.com/ienground/navite"
         licenses {
             license {
                 name = "The Apache License, Version 2.0"
@@ -113,9 +113,9 @@ mavenPublishing {
             }
         }
         scm {
-            url = "https://github.com/ienground/compose-swift-navigation3"
-            connection = "scm:git:https://github.com/ienground/compose-swift-navigation3.git"
-            developerConnection = "scm:git:https://github.com/ienground/compose-swift-navigation3.git"
+            url = "https://github.com/ienground/navite"
+            connection = "scm:git:https://github.com/ienground/navite.git"
+            developerConnection = "scm:git:https://github.com/ienground/navite.git"
         }
     }
 }
