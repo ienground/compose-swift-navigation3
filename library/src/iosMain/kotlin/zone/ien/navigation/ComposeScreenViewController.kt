@@ -29,6 +29,7 @@ import platform.UIKit.UINavigationItemLargeTitleDisplayMode
 import platform.UIKit.UITransitionContextToViewControllerKey
 import platform.UIKit.UIUserInterfaceIdiomPad
 import platform.UIKit.UIUserInterfaceSizeClassRegular
+import platform.UIKit.UIView
 import platform.UIKit.UIViewController
 import platform.UIKit.addChildViewController
 import platform.UIKit.didMoveToParentViewController
@@ -124,7 +125,7 @@ internal class ComposeScreenController(
         val traits = tabs.traitCollection
         val usesTopTabBar = traits.userInterfaceIdiom == UIUserInterfaceIdiomPad &&
             traits.horizontalSizeClass == UIUserInterfaceSizeClassRegular
-        if (tabBarTransitionPending && (animated || usesTopTabBar)) return
+        if (tabBarTransitionPending) return
         val transition = navigation.transitionCoordinator
         if ((animated || usesTopTabBar) && transition != null) {
             val destination = transition.viewControllerForKey(UITransitionContextToViewControllerKey)
@@ -156,23 +157,27 @@ internal class ComposeScreenController(
             }
             val tabBar = tabs.tabBar
             val visibleAlpha = tabBar.alpha.takeIf { it > 0.0 } ?: 1.0
-            if (!hidden) {
-                // UIKit에 표시하되 투명하게 시작해 스와이프 진행률에 맞춰 드러낸다.
-                tabBar.alpha = 0.0
-                tabs.setTabBarHidden(false, animated = false)
-                tabBar.alpha = 0.0
-            }
             val queued = transition.animateAlongsideTransitionInView(
                 view = tabBar,
-                animation = { tabBar.alpha = if (hidden) 0.0 else visibleAlpha },
+                animation = if (hidden) {
+                    { tabBar.alpha = 0.0 }
+                } else {
+                    null
+                },
                 completion = { context ->
                     tabBarTransitionPending = false
-                    val cancelled = context?.isCancelled() == true
-                    if (tabs.selectedViewController == navigation && (cancelled || navigation.topViewController == this)) {
-                        val finalHidden = if (cancelled) !hidden else hidden
-                        if (tabs.tabBarHidden != finalHidden) tabs.setTabBarHidden(finalHidden, animated = false)
+                    val stillShowingDestination = context?.isCancelled() != true &&
+                        tabs.selectedViewController == navigation && navigation.topViewController == this
+                    val finalHidden = if (stillShowingDestination) tabBarHiddenForScreen(navigation.viewControllers) else null
+                    if (hidden) {
+                        if (finalHidden == true) tabs.setTabBarHidden(true, animated = false)
+                        tabBar.alpha = visibleAlpha
+                    } else if (finalHidden == false) {
+                        tabBar.alpha = 0.0
+                        tabs.setTabBarHidden(false, animated = false)
+                        tabBar.alpha = 0.0
+                        UIView.animateWithDuration(duration = 0.18, animations = { tabBar.alpha = visibleAlpha })
                     }
-                    tabBar.alpha = visibleAlpha
                 },
             )
             if (queued) return

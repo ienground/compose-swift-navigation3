@@ -78,7 +78,10 @@ fun HomeScreen(onOpenDetail: (Int) -> Unit, onRefreshCompleted: () -> Unit) {
         ) {
             items(50) { id ->
                 ListItem(
-                    headlineContent = { Text(text = "Row $id") },
+                    headlineContent = {
+                        val title = if (id == tabBarHiddenDetailId) "Row $id · iOS 하단 탭 바 숨김" else "Row $id"
+                        Text(text = title)
+                    },
                     modifier = Modifier.clickable { onOpenDetail(id) },
                 )
             }

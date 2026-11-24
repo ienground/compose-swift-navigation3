@@ -161,7 +161,7 @@ iOS 내비게이션은 **UIKit `UITabBarController`와 탭마다 하나씩 둔 `
 
 **UIKit 구현 지침**
 - 화면은 엔트리마다 `ComposeUIViewController`를 하나씩 두고, 엔트리 고유 키와 컨트롤러를 매핑해 재사용한다.
-- 상세 화면의 탭 바 숨김은 iOS 18부터 제공되는 `UITabBarController.setTabBarHidden(_:animated:)`로 처리한다. `hidesBottomBarWhenPushed`는 push 시작 때 이전 화면의 큰 제목을 먼저 접으므로 쓰지 않는다. push의 전환 준비가 끝난 뒤 해당 화면까지의 스택을 기준으로 숨김 상태를 적용하고, 스와이프가 취소되면 다시 나타나는 화면이 상태를 복원한다.
+- 상세 화면의 탭 바 숨김은 `UITabBarController.setTabBarHidden(_:animated:)`로 처리한다. 하단 탭 바는 push가 시작되면 페이드아웃하고 전환 완료 시 숨긴다. pop으로 상세 화면이 사라지면 탭 바를 표시하고 페이드인한다. 스와이프를 취소하면 탭 바는 숨겨진 채로 유지된다.
 - 타이틀은 `navigationItem.title`, toolbar는 `navigationItem`의 bar button item 또는 `toolbarItems`로 구성한다. 버튼 동작은 selector 대신 `UIAction` 클로저로 연결한다.
 - 네이티브에서 시작된 pop(뒤로 버튼, 스와이프)은 `UINavigationControllerDelegate`의 `navigationController(_:didShow:animated:)`에서 감지한다. 인터랙티브 전환은 `transitionCoordinator`로 완료 여부를 확인한다.
 - 최소 지원 버전이 18.2이므로 iOS 18에서 추가된 UIKit API(`UITab`, `UITabGroup`, `UITabBarController.tabs`)는 쓸 수 있다.
@@ -353,7 +353,7 @@ iOS에서는 탑바 전체가 시스템 `UINavigationBar`다. Compose는 바 아
   - 공유 화면이 늘 선택된 탭에 붙으므로 상태 복원에 따로 저장할 값이 없다. 백스택은 앱의 `rememberNavBackStack`이 복원한다.
 - **iOS** (`TabsLayout`, `StackCoordinator`)
   - 선택된 탭의 목표 스택은 그 탭 엔트리 뒤에 공유 엔트리를 붙인 것이다. 나머지 탭에는 붙이지 않는다. diff와 전환은 기존 규칙(Kotlin → UIKit)을 그대로 쓴다.
-  - 공유 화면은 `EntryScreen.shared`로 탭 바 숨김을 요청한다. `StackCoordinator`가 push 직후 `UITabBarController.setTabBarHidden`으로 적용한다. 네이티브 pop·탭 전환에서는 화면의 `viewWillAppear` 다음 메인 큐에서 적용한다.
+  - 공유 화면은 `EntryScreen.shared`로 탭 바 숨김을 요청한다. `ComposeScreenController`가 화면 전환에 맞춰 숨김을 적용한다. 하단 탭 바는 이전 화면으로 돌아가는 pop이 완료된 뒤 페이드인한다.
   - UIKit이 pop하면 사라진 화면마다 공유 화면은 `onSharedBack`, 탭 화면은 그 탭의 `onBack`을 위에서부터 부른다.
   - 화면에 보이는 탭만 애니메이션한다. 선택되지 않은 탭이나 이번에 선택이 바뀌는 탭의 스택은 애니메이션 없이 바꾼다. 그래서 앱이 탭을 바꾸면 공유 화면은 이전 탭에서 빠지고 새 탭에 바로 붙는다.
     - 이전에는 선택되지 않은 탭도 애니메이션으로 바꿨다. 화면 밖이라 보이지 않았고, 진행 중인 전환이 남아 다음 적용이 `didShow`까지 미뤄질 수 있었다.
@@ -670,6 +670,7 @@ ViewModel은 저장하지 않는다(Android도 프로세스가 죽으면 잃는�
 | 2026-11-15 | `NativeTabs`에 탭 위의 공유 화면(`sharedBackStack`, `onSharedBack`)을 둔다. iOS는 선택된 탭의 `UINavigationController`에 이어서 push하고, 공유 화면은 항상 탭 바를 숨긴다. 앱이 탭을 바꾸면 공유 화면이 새 탭으로 옮겨 간다(6.6장). | 탭 화면 전체를 바깥 `NavDisplay`로 덮는 앱(Hotpot)은 상세 라우트를 탭마다 따로 쌓도록 내비게이션을 다시 짜야 했다(약 1,000줄). 공유 백스택이면 원래 백스택과 이동 코드를 그대로 쓴다. 탭 바를 항상 숨기면 "공유 화면이 보이는 중 사용자의 탭 전환"이 생기지 않아 의미가 단순하다. 검토한 대안: 탭 바를 보이게 두고 탭 전환 때 공유 화면을 비우거나 남기는 방식은 사용자가 보는 결과를 예측하기 어렵다. 중첩 선언(공유 스택의 루트 엔트리 안에 `NativeTabs`)은 iOS에서 화면 composition 안에 탭 컨트롤러를 두어야 해 6.6장 구조와 맞지 않는다. iOS 관례(탭마다 독립 스택)와 다르지만, 탭 바를 가리는 화면에서는 사용자 눈에 차이가 없다. |
 | 2026-11-16 | 바 버튼과 메뉴는 `image: Painter?`로 사용자 이미지를 받는다. | 공통 코드의 PNG·벡터 리소스와 `ImageVector`를 재사용하면서 실제 UIKit 버튼·메뉴를 유지한다. 제목 이미지의 변환기를 함께 쓰고, 최대 22×22pt의 template 이미지로 네이티브 tint를 적용한다. 기존 생성자는 유지한다. |
 | 2026-11-18 | 탭 바 숨김은 push 전환 완료 후 `UITabBarController.setTabBarHidden(_:animated:)`로 적용한다. | Hotpot과 순수 UIKit에서 `hidesBottomBarWhenPushed` 또는 push 직후 숨김을 적용하면 이전 큰 제목이 위로 움직였다. 전환 중 탭 바의 투명도만 변경해 여백을 유지하면 UIKit이 기존 큰 제목을 같은 높이에서 가로로 전환한다. 실제 애니메이션이 없는 화면에서는 즉시 적용한다. 전환이 완료될 때 해당 화면과 탭이 여전히 표시된 경우에만 숨긴다. |
+| 2026-11-24 | 하단 탭 바는 push 시작 시 페이드아웃하고 pop이 완료되면 페이드인한다. | 상세 화면을 닫는 동안 탭 바를 숨겨 두므로 뒤로 스와이프를 취소해도 탭 바가 드러나지 않는다. |
 | 2026-11-15 | Maven artifactId를 `navigation`으로 줄인다. 좌표는 `zone.ien.navigation:navigation`이다. POM `name`과 iOS 로그 접두어(`zone.ien.navigation:`)도 맞춘다. `rootProject.name`, GitHub 저장소 이름과 URL, README 제목은 `compose-swift-navigation3`로 둔다. | 사용자 요청: 의존성 선언에 쓰기에 이름이 너무 길다. group이 이미 라이브러리를 구분하므로 artifactId는 짧아도 된다. 저장소 이름은 바꾸지 않았으므로 저장소를 가리키는 값은 그대로 둔다. mavenLocal로 받는 앱(Hotpot)은 버전 카탈로그의 `name`을 바꿔야 한다. |
 
 ## 9. Git과 배포

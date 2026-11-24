@@ -1,23 +1,38 @@
 import XCTest
 
 final class NavigationUITests: ExampleAppTestCase {
+    private let hiddenTabBarRow = "Row 4 · iOS 하단 탭 바 숨김"
+
     func testPushAndNativeBack() {
         launch()
-        tap("Row 3")
-        expectText("Selected item: 3", "상세 화면")
-        XCTAssertTrue(app.navigationBars["Detail 3"].exists)
+        let homeTab = app.tabBars.buttons["Home"]
+        XCTAssertTrue(homeTab.isHittable)
+        tap(hiddenTabBarRow)
+        expectText("Selected item: 4", "상세 화면")
+        XCTAssertTrue(app.navigationBars["Detail 4"].exists)
+        XCTAssertFalse(homeTab.isHittable)
         tapBack()
-        expectText("Row 3", "뒤로가기")
+        expectText(hiddenTabBarRow, "뒤로가기")
         XCTAssertTrue(app.navigationBars["Home"].exists)
+        expectTabBarToReturn(homeTab)
     }
 
     func testCancelledAndCompletedSwipe() {
         launch()
-        tap("Row 3"); pause(1)
+        let homeTab = app.tabBars.buttons["Home"]
+        tap(hiddenTabBarRow); pause(1)
+        XCTAssertFalse(homeTab.isHittable)
         edgeSwipe(distance: 50, velocity: 80, hold: 0.3); pause(1)
-        expectText("Selected item: 3", "스와이프 취소")
+        expectText("Selected item: 4", "스와이프 취소")
+        XCTAssertFalse(homeTab.isHittable)
         edgeSwipe(distance: 320, velocity: 1200, hold: 0); pause(1)
-        expectText("Row 3", "스와이프 완료")
+        expectText(hiddenTabBarRow, "스와이프 완료")
+        expectTabBarToReturn(homeTab)
+    }
+
+    private func expectTabBarToReturn(_ tab: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        let visible = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: tab)
+        XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 5), .completed, file: file, line: line)
     }
 
     func testTabsKeepTheirBackStacks() {

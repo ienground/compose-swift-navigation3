@@ -16,6 +16,8 @@ data object SettingsRoute : NavKey
 @Serializable
 data class DetailRoute(val id: Int, val preview: Boolean = false) : NavKey
 
+internal const val tabBarHiddenDetailId = 4
+
 // Navigation 3의 KMP 백스택 저장 설정. 네이티브 내비게이션을 쓰지 않는 앱에도 필요하다.
 val navigationConfiguration = SavedStateConfiguration {
     serializersModule = SerializersModule {

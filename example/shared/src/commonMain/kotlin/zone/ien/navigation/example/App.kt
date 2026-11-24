@@ -82,7 +82,7 @@ fun App() {
                                     systemImage = "star",
                                 ),
                             ),
-                        )
+                        ) + nativeScreen(hidesTabBar = route.id == tabBarHiddenDetailId)
                     }
                 }) { route ->
                     if (route.preview) {

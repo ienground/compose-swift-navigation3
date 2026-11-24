@@ -529,6 +529,10 @@ class StackCoordinatorTest {
             )
             assertNotNull(navigation.transitionCoordinator, "화면에 연결된 UIKit push가 시작되어야 합니다.")
             assertFalse(tabs.tabBarHidden, "나가는 큰 제목이 움직이는 동안 탭 바 여백을 유지해야 합니다.")
+            awaitUIKit("push 중 탭 바의 중간 불투명도가 나타나야 합니다.") {
+                val opacity = tabs.tabBar.layer.presentationLayer()?.opacity
+                !tabs.tabBarHidden && opacity != null && opacity > 0f && opacity < 1f
+            }
             repeat(20) {
                 if (!tabs.tabBarHidden) {
                     NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.05))
@@ -542,11 +546,20 @@ class StackCoordinatorTest {
         }
     }
 
-    @OptIn(ExperimentalForeignApi::class)
     @Test
-    fun sharedPopRevealsTheTabBarWithoutASeparateUIKitAnimation() {
+    fun sharedPopFadesInTheTabBarAfterTheScreenDisappears() {
+        assertTabBarFadesInAfterPop(native = false)
+    }
+
+    @Test
+    fun nativePopFadesInTheTabBarAfterTheScreenDisappears() {
+        assertTabBarFadesInAfterPop(native = true)
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private fun assertTabBarFadesInAfterPop(native: Boolean) {
         val (stack, navigation) = coordinator()
-        val tabs = RecordingTabs()
+        val tabs = UITabBarController()
         tabs.setViewControllers(listOf(navigation), animated = false)
         val home = entry("home")
         stack.update(listOf(home), onBack = {}, shared = listOf(entry("settings")), animated = false)
@@ -554,17 +567,25 @@ class StackCoordinatorTest {
         window.rootViewController = tabs
         window.makeKeyAndVisible()
         try {
-            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.1))
+            val detail = assertNotNull(navigation.topViewController)
+            awaitUIKit("상세 화면이 테스트 윈도에 나타나야 합니다.") { detail.viewIfLoaded?.window == window }
             assertTrue(tabs.tabBarHidden)
-            tabs.tabBar.alpha = 0.0
-            tabs.changes.clear()
-            stack.update(listOf(home), onBack = {})
+            if (native) navigation.popViewControllerAnimated(true)
+            else stack.update(listOf(home), onBack = {})
             assertNotNull(navigation.transitionCoordinator)
-            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.7))
-            assertFalse(tabs.tabBarHidden)
-            assertTrue(tabs.changes.contains(false to false))
-            assertFalse(tabs.changes.contains(false to true))
-            assertEquals(1.0, tabs.tabBar.alpha)
+
+            awaitUIKit("상세 화면이 사라질 때까지 탭 바가 숨겨져 있어야 합니다.") {
+                val disappeared = detail.viewIfLoaded?.window == null
+                if (!disappeared) assertTrue(tabs.tabBarHidden, "pop 중에 탭 바가 표시됐습니다.")
+                disappeared
+            }
+            awaitUIKit("상세 화면이 사라진 후 탭 바의 중간 불투명도가 나타나야 합니다.") {
+                val opacity = tabs.tabBar.layer.presentationLayer()?.opacity
+                !tabs.tabBarHidden && opacity != null && opacity > 0f && opacity < 1f
+            }
+            awaitUIKit("페이드인 후 탭 바가 완전히 보여야 합니다.") {
+                tabs.tabBar.layer.presentationLayer()?.opacity == 1f
+            }
         } finally {
             window.hidden = true
             window.rootViewController = null
